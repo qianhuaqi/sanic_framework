@@ -1,0 +1,22 @@
+services:
+{% if "mysql" in databases %}
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: {{ app_name }}
+    ports:
+      - "3306:3306"
+{% endif %}
+{% if "redis" in databases %}
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+{% endif %}
+{% if "mongo" in databases %}
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+{% endif %}

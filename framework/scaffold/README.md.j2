@@ -1,0 +1,21 @@
+# {{ project_name }}
+
+Generated Sanic MVC API project.
+
+## Run
+
+```powershell
+copy .env.example .env
+python run.py
+```
+
+## Add Version
+
+```powershell
+sanic-framework add v1
+sanic-framework make module v1 demo
+```
+
+## Enabled Databases
+
+{{ databases | join(", ") if databases else "none" }}
