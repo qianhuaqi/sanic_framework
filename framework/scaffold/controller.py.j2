@@ -9,6 +9,7 @@ from framework.response import json_response
 
 
 bp = Blueprint("{{ version_name }}_{{ module_name }}", url_prefix="/{{ version_name }}/{{ module_name }}")
+CONTROLLER_KIND = "resource"
 
 
 @bp.get("/")

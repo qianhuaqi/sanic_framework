@@ -3,17 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from framework.error_codes import resolve_error_message
+from framework.versioning import normalize_version, version_from_path
 
 
 def _project_root() -> Path:
     return Path.cwd()
-
-
-def version_from_path(path: str = "") -> str:
-    parts = [part for part in str(path).split("/") if part]
-    if parts and parts[0].startswith("v") and parts[0][1:].isdigit():
-        return parts[0]
-    return ""
 
 
 def _request_version(request) -> str:
@@ -26,6 +20,7 @@ def language_roots(version: str = "") -> list[Path]:
     root = _project_root()
     roots = []
     if version:
+        version = normalize_version(version)
         roots.append(root / "app" / version / "language")
     roots.append(root / "app" / "language")
     roots.append(root / "framework" / "language")
@@ -36,6 +31,7 @@ def module_map_path(version: str = "") -> Path | None:
     root = _project_root()
     candidates = []
     if version:
+        version = normalize_version(version)
         candidates.append(root / "app" / version / "language" / "modules.ini")
     candidates.extend(
         [

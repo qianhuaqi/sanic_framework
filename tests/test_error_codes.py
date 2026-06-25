@@ -5,7 +5,7 @@ import pytest
 
 from framework.app import create_app
 from framework.error_codes import build_error_code_index, parse_error_code_catalog
-from framework.exception import get_error_message, language_roots
+from framework.exception import get_error_message, language_roots, version_from_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +70,54 @@ def test_language_roots_do_not_include_legacy_top_level_language(tmp_path, monke
     assert roots == ["app/v1/language", "app/language", "framework/language"]
 
 
+def test_version_from_path_supports_unified_version_names():
+    assert version_from_path("/v1/demo") == "v1"
+    assert version_from_path("/v1_admin/demo") == "v1_admin"
+    assert version_from_path("/v2_partner/demo") == "v2_partner"
+    assert version_from_path("/meta/error-codes") == ""
+    assert version_from_path("/admin/demo") == ""
+
+
+def test_get_error_message_uses_version_and_public_language_packages(tmp_path, monkeypatch):
+    module_map = tmp_path / "app" / "language" / "modules.ini"
+    module_map.parent.mkdir(parents=True)
+    module_map.write_text("[Modules]\n110000-119999 = user\n", encoding="utf-8")
+    public_dir = tmp_path / "app" / "language" / "zh-CN" / "ERROR"
+    v1_dir = tmp_path / "app" / "v1" / "language" / "zh-CN" / "ERROR"
+    admin_dir = tmp_path / "app" / "v1_admin" / "language" / "zh-CN" / "ERROR"
+    public_dir.mkdir(parents=True)
+    v1_dir.mkdir(parents=True)
+    admin_dir.mkdir(parents=True)
+    (public_dir / "user.ini").write_text("[User]\n110000 = public message\n", encoding="utf-8")
+    (v1_dir / "user.ini").write_text("[User]\n110000 = v1 message\n", encoding="utf-8")
+    (admin_dir / "user.ini").write_text("[User]\n110000 = admin message\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    class Request:
+        pass
+
+    class App:
+        pass
+
+    class Ctx:
+        pass
+
+    class Config:
+        language = "zh-CN"
+
+    request = Request()
+    request.app = App()
+    request.app.ctx = Ctx()
+    request.app.ctx.config = Config()
+
+    request.path = "/v1/demo"
+    assert get_error_message(request, 110000) == "v1 message"
+    request.path = "/v1_admin/demo"
+    assert get_error_message(request, 110000) == "admin message"
+    request.path = "/meta/error-codes"
+    assert get_error_message(request, 110000) == "public message"
+
+
 def test_get_error_message_reads_language_package():
     class Request:
         path = "/v1/demo"
@@ -100,7 +148,7 @@ def test_meta_error_codes_endpoint_is_available_in_testing():
     assert response.json["code"] == 0
     data = response.json["data"]
     assert data["locales"] == ["zh-CN", "en-US"]
-    assert data["summary"] == {"total": 23, "modules": 5, "reserved": 1}
+    assert data["summary"] == {"total": 24, "modules": 5, "reserved": 1}
     assert data["modules"][0]["module"] == "user"
     assert data["modules"][0]["total"] == 3
     assert all("codes" in bucket for bucket in data["modules"])
@@ -108,3 +156,22 @@ def test_meta_error_codes_endpoint_is_available_in_testing():
     assert data["reserved"][0]["range"] == "100000-109999"
     assert any(item["code"] == "110000" for item in data["modules"][0]["codes"])
     assert any(item["code"] == "991111" for bucket in data["modules"] for item in bucket["codes"])
+
+
+def test_meta_error_codes_validates_version_parameter():
+    app = create_app()
+
+    async def scenario():
+        for value in ("", "v1", "v1_admin"):
+            _, response = await app.asgi_client.get(f"/meta/error-codes?version={value}")
+            assert response.status == 200
+            assert response.json["code"] == 0
+
+        for value in ("../", "../../config", "v1/../../../", "C:\\Windows", "/absolute/path", "..%2F..%2Fconfig"):
+            _, response = await app.asgi_client.get(f"/meta/error-codes?version={value}")
+            assert response.status == 400
+            assert response.json["code"] == 991112
+            assert "sanic" not in response.json["msg"].lower()
+            assert ":\\" not in response.json["msg"]
+
+    asyncio.run(scenario())

@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.v1.model.table.catalog import CatalogModel
-from app.v1.model.table.order import OrderModel
+from app.v1.model.table.orders import OrderModel
 from framework.model.business import BusinessModel
 
 

@@ -126,6 +126,15 @@ def test_initialized_project_make_module_is_registered(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{tmp_path}{os.pathsep}{ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
     env["SANIC_ENV"] = "testing"
+    add_result = subprocess.run(
+        [sys.executable, "-m", "framework.cli.main", "add", "v1", "--root", str(tmp_path)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert add_result.returncode == 0, add_result.stderr
+
     make_result = subprocess.run(
         [sys.executable, "-m", "framework.cli.main", "make", "module", "v1", "demo", "--root", str(tmp_path)],
         cwd=tmp_path,

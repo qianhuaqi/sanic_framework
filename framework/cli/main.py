@@ -3,14 +3,15 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+import sys
 
 from framework.cli.project import ProjectOptions
 from framework.cli.project import check_project
 from framework.cli.project import render_scaffold_template
 from framework.cli.project import render_project_files
+from framework.versioning import normalize_version
 
 
-VERSION_PATTERN = re.compile(r"^v[0-9][A-Za-z0-9_]*$")
 MODULE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -27,11 +28,12 @@ def _touch_init(directory: Path):
     _write_if_missing(directory / "__init__.py", "__all__ = []\n")
 
 
-def normalize_version(version: str) -> str:
-    normalized = version.strip().replace("-", "_")
-    if not VERSION_PATTERN.match(normalized):
-        raise ValueError("Version name must look like v1, v2, or v1_admin")
-    return normalized
+def require_version(version: str, root: str | Path = ".") -> Path:
+    version_name = normalize_version(version)
+    version_root = Path(root).resolve() / "app" / version_name
+    if not version_root.exists():
+        raise ValueError(f"Version '{version_name}' does not exist. Run: sanic-framework add {version_name}")
+    return version_root
 
 
 def normalize_module_name(module: str) -> str:
@@ -126,9 +128,9 @@ def make_module(version: str, module: str, root: str | Path = ".") -> list[Path]
     version_name = normalize_version(version)
     module_name = normalize_module_name(module)
     model_class = f"{_pascal_case(module_name)}Model"
-    version_root = root_path / "app" / version_name
+    version_root = require_version(version_name, root_path)
     docs_root = root_path / "public" / "docs" / version_name
-    created = add_version(version_name, root_path)
+    created: list[Path] = []
 
     view_dir = version_root / "view" / module_name
     docs_root.mkdir(parents=True, exist_ok=True)
@@ -160,9 +162,10 @@ def make_module(version: str, module: str, root: str | Path = ".") -> list[Path]
 def make_model(version: str, table: str, root: str | Path = ".") -> list[Path]:
     root_path = Path(root).resolve()
     version_name = normalize_version(version)
+    require_version(version_name, root_path)
     table_name = normalize_table_name(table)
     model_class = f"{_pascal_case(table_name)}Model"
-    created = add_version(version_name, root_path)
+    created: list[Path] = []
     model = render_scaffold_template("table_model.py.j2", model_class=model_class, table_name=table_name)
     path = root_path / "app" / version_name / "model" / "table" / f"{table_name}.py"
     if _write_if_missing(path, model):
@@ -173,9 +176,10 @@ def make_model(version: str, table: str, root: str | Path = ".") -> list[Path]:
 def make_business_model(version: str, business: str, root: str | Path = ".") -> list[Path]:
     root_path = Path(root).resolve()
     version_name = normalize_version(version)
+    require_version(version_name, root_path)
     business_name = normalize_business_name(business)
     model_class = f"{_pascal_case(business_name)}BusinessModel"
-    created = add_version(version_name, root_path)
+    created: list[Path] = []
     model = render_scaffold_template(
         "business_model.py.j2",
         model_class=model_class,
@@ -229,50 +233,54 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "init":
-        app_name = args.app_name or args.project_name.replace("-", "_")
-        databases = [item.strip() for item in args.databases.split(",") if item.strip()]
-        options = ProjectOptions(
-            project_name=args.project_name,
-            app_name=app_name,
-            port=args.port,
-            databases=databases,
-            enable_auth=not args.disable_auth,
-            enable_signing=not args.disable_signing,
-            enable_i18n=not args.disable_i18n,
-            enable_response_cache=not args.disable_response_cache,
-            include_example=False,
-        )
-        render_project_files(Path(args.root), options)
-        return 0
-    if args.command == "add":
-        created = add_version(args.version, args.root)
-        for path in created:
-            print(path)
-        return 0
-    if args.command == "make" and args.make_command == "module":
-        created = make_module(args.version, args.module, args.root)
-        for path in created:
-            print(path)
-        return 0
-    if args.command == "make" and args.make_command == "model":
-        created = make_model(args.version, args.table, args.root)
-        for path in created:
-            print(path)
-        return 0
-    if args.command == "make" and args.make_command == "business-model":
-        created = make_business_model(args.version, args.business, args.root)
-        for path in created:
-            print(path)
-        return 0
-    if args.command == "check":
-        issues = check_project(Path(args.root))
-        if issues:
-            for issue in issues:
-                print(issue)
-            return 1
-        print("Project check passed")
-        return 0
+    try:
+        if args.command == "init":
+            app_name = args.app_name or args.project_name.replace("-", "_")
+            databases = [item.strip() for item in args.databases.split(",") if item.strip()]
+            options = ProjectOptions(
+                project_name=args.project_name,
+                app_name=app_name,
+                port=args.port,
+                databases=databases,
+                enable_auth=not args.disable_auth,
+                enable_signing=not args.disable_signing,
+                enable_i18n=not args.disable_i18n,
+                enable_response_cache=not args.disable_response_cache,
+                include_example=False,
+            )
+            render_project_files(Path(args.root), options)
+            return 0
+        if args.command == "add":
+            created = add_version(args.version, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "make" and args.make_command == "module":
+            created = make_module(args.version, args.module, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "make" and args.make_command == "model":
+            created = make_model(args.version, args.table, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "make" and args.make_command == "business-model":
+            created = make_business_model(args.version, args.business, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "check":
+            issues = check_project(Path(args.root))
+            if issues:
+                for issue in issues:
+                    print(issue)
+                return 1
+            print("Project check passed")
+            return 0
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     parser.error(f"Unknown command: {args.command}")
     return 2
 

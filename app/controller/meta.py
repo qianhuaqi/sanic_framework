@@ -1,9 +1,10 @@
 from sanic import Blueprint
 
 from framework.error_codes import build_error_code_index, normalize_locale_name
-from framework.exception import language_roots, module_map_path
+from framework.exception import language_roots, module_map_path, raise_code
 from framework.response import json_response
 from framework.router import RoutePolicy, set_blueprint_policy
+from framework.versioning import normalize_version
 
 
 bp = Blueprint("meta", url_prefix="/meta")
@@ -20,6 +21,11 @@ set_blueprint_policy(
 @bp.get("/error-codes")
 async def error_codes(request):
     version = request.args.get("version", "").strip()
+    if version:
+        try:
+            version = normalize_version(version)
+        except ValueError:
+            raise_code(request, 991112, status_code=400)
     index = build_error_code_index(language_roots(version), module_map_path=module_map_path(version))
 
     code_filter = request.args.get("code", "").strip()
