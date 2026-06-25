@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
+from importlib import import_module
 import os
 
 from dotenv import load_dotenv
@@ -11,6 +12,19 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off", ""}
 SUPPORTED_DATABASES = ("mysql", "redis", "mongo", "sqlite")
 IMPLEMENTED_DATABASES = {"mysql", "redis", "mongo"}
+
+
+def project_setting(name: str, default=None):
+    module_name = os.getenv("PROJECT_CONFIG_MODULE", "config.defaults")
+    try:
+        module = import_module(module_name)
+    except ImportError:
+        return default
+    return getattr(module, name, default)
+
+
+def env_or_setting(name: str, default=None):
+    return os.getenv(name, project_setting(name, default))
 
 
 def parse_bool(value):
@@ -52,11 +66,11 @@ def parse_host_port_list(value: str, default_port: int = 3306) -> list[tuple[str
 
 def build_mysql_endpoint(prefix: str, defaults: dict[str, object]) -> dict[str, object]:
     return {
-        "host": os.getenv(f"{prefix}_HOST", str(defaults.get("host", "localhost"))),
-        "port": int(os.getenv(f"{prefix}_PORT", str(defaults.get("port", 3306)))),
-        "user": os.getenv(f"{prefix}_USER", str(defaults.get("user", ""))),
-        "password": os.getenv(f"{prefix}_PASSWORD", str(defaults.get("password", ""))),
-        "database": os.getenv(f"{prefix}_DATABASE", str(defaults.get("database", ""))),
+        "host": env_or_setting(f"{prefix}_HOST", defaults.get("host", "localhost")),
+        "port": int(env_or_setting(f"{prefix}_PORT", defaults.get("port", 3306))),
+        "user": env_or_setting(f"{prefix}_USER", defaults.get("user", "")),
+        "password": env_or_setting(f"{prefix}_PASSWORD", defaults.get("password", "")),
+        "database": env_or_setting(f"{prefix}_DATABASE", defaults.get("database", "")),
     }
 
 
@@ -64,11 +78,11 @@ def build_mysql_config() -> dict:
     master = build_mysql_endpoint(
         "MYSQL_MASTER",
         {
-            "host": os.getenv("MYSQL_HOST", "localhost"),
-            "port": int(os.getenv("MYSQL_PORT", "3306")),
-            "user": os.getenv("MYSQL_USER", ""),
-            "password": os.getenv("MYSQL_PASSWORD", ""),
-            "database": os.getenv("MYSQL_DATABASE", ""),
+            "host": env_or_setting("MYSQL_HOST", "localhost"),
+            "port": int(env_or_setting("MYSQL_PORT", "3306")),
+            "user": env_or_setting("MYSQL_USER", ""),
+            "password": env_or_setting("MYSQL_PASSWORD", ""),
+            "database": env_or_setting("MYSQL_DATABASE", ""),
         },
     )
     slaves = [
@@ -77,47 +91,47 @@ def build_mysql_config() -> dict:
             "host": host,
             "port": port,
         }
-        for host, port in parse_host_port_list(os.getenv("MYSQL_SLAVES", ""), default_port=master["port"])
+        for host, port in parse_host_port_list(env_or_setting("MYSQL_SLAVES", ""), default_port=master["port"])
     ]
     return {
-        "enabled": parse_bool(os.getenv("MYSQL_ENABLED", "false")),
+        "enabled": parse_bool(env_or_setting("MYSQL_ENABLED", "false")),
         "mode": "master_slave" if slaves else "single",
         "master": master,
         "slaves": slaves,
-        "pool_size": int(os.getenv("MYSQL_POOL_SIZE", "5")),
-        "pool_recycle": int(os.getenv("MYSQL_POOL_RECYCLE", "3600")),
+        "pool_size": int(env_or_setting("MYSQL_POOL_SIZE", "5")),
+        "pool_recycle": int(env_or_setting("MYSQL_POOL_RECYCLE", "3600")),
     }
 
 
 def build_redis_config() -> dict:
-    sentinel_enabled = parse_bool(os.getenv("REDIS_SENTINEL_ENABLED", "false"))
-    sentinels = parse_host_port_list(os.getenv("REDIS_SENTINELS", ""), default_port=26379)
+    sentinel_enabled = parse_bool(env_or_setting("REDIS_SENTINEL_ENABLED", "false"))
+    sentinels = parse_host_port_list(env_or_setting("REDIS_SENTINELS", ""), default_port=26379)
     if sentinel_enabled and not sentinels:
         raise ValueError("REDIS_SENTINEL_ENABLED=true requires REDIS_SENTINELS to be configured")
     return {
-        "enabled": parse_bool(os.getenv("REDIS_ENABLED", "false")),
+        "enabled": parse_bool(env_or_setting("REDIS_ENABLED", "false")),
         "mode": "sentinel" if sentinel_enabled else "single",
-        "host": os.getenv("REDIS_HOST", "localhost"),
-        "port": int(os.getenv("REDIS_PORT", "6379")),
-        "password": os.getenv("REDIS_PASSWORD", ""),
-        "db": int(os.getenv("REDIS_DB", "0")),
-        "expire": int(os.getenv("REDIS_EXPIRE", "3600")),
-        "prefix": os.getenv("REDIS_PREFIX", "sanic_"),
-        "idle_timeout": int(os.getenv("REDIS_IDLE_TIMEOUT", "600")),
+        "host": env_or_setting("REDIS_HOST", "localhost"),
+        "port": int(env_or_setting("REDIS_PORT", "6379")),
+        "password": env_or_setting("REDIS_PASSWORD", ""),
+        "db": int(env_or_setting("REDIS_DB", "0")),
+        "expire": int(env_or_setting("REDIS_EXPIRE", "3600")),
+        "prefix": env_or_setting("REDIS_PREFIX", "sanic_"),
+        "idle_timeout": int(env_or_setting("REDIS_IDLE_TIMEOUT", "600")),
         "sentinel_enabled": sentinel_enabled,
         "sentinels": sentinels,
-        "master_name": os.getenv("REDIS_MASTER_NAME", "mymaster"),
+        "master_name": env_or_setting("REDIS_MASTER_NAME", "mymaster"),
     }
 
 
 def build_mongo_config() -> dict:
     return {
-        "enabled": parse_bool(os.getenv("MONGO_ENABLED", "false")),
-        "host": os.getenv("MONGODB_HOST", "localhost"),
-        "port": int(os.getenv("MONGODB_PORT", "27017")),
-        "username": os.getenv("MONGODB_USERNAME", ""),
-        "password": os.getenv("MONGODB_PASSWORD", ""),
-        "database": os.getenv("MONGODB_DATABASE", ""),
+        "enabled": parse_bool(env_or_setting("MONGO_ENABLED", "false")),
+        "host": env_or_setting("MONGODB_HOST", "localhost"),
+        "port": int(env_or_setting("MONGODB_PORT", "27017")),
+        "username": env_or_setting("MONGODB_USERNAME", ""),
+        "password": env_or_setting("MONGODB_PASSWORD", ""),
+        "database": env_or_setting("MONGODB_DATABASE", ""),
     }
 
 
@@ -147,6 +161,13 @@ class AppConfig:
     cors_max_age: int
     auth_white_ip_list: list[str]
     signing_secret: str
+    log_to_file: bool
+    log_level: str
+    log_path: str
+    log_file: str
+    log_formatter: str
+    log_max_bytes: int
+    log_backup_count: int
     mysql: dict
     redis: dict
     mongo: dict
@@ -158,16 +179,16 @@ def load_config(env_file: str | None = None, load_env: bool = True) -> AppConfig
     elif load_env and os.getenv("SANIC_ENV", "").lower() not in {"test", "testing"}:
         load_dotenv()
 
-    legacy_databases = parse_csv(os.getenv("ENABLED_DATABASES", ""))
+    legacy_databases = parse_csv(env_or_setting("ENABLED_DATABASES", ""))
     if legacy_databases:
         raise RuntimeError(
             "ENABLED_DATABASES is no longer supported; use MYSQL_ENABLED, REDIS_ENABLED, MONGO_ENABLED, or SQLITE_ENABLED"
         )
 
-    mysql_enabled = parse_bool(os.getenv("MYSQL_ENABLED", "false"))
-    redis_enabled = parse_bool(os.getenv("REDIS_ENABLED", "false"))
-    mongo_enabled = parse_bool(os.getenv("MONGO_ENABLED", "false"))
-    sqlite_enabled = parse_bool(os.getenv("SQLITE_ENABLED", "false"))
+    mysql_enabled = parse_bool(env_or_setting("MYSQL_ENABLED", "false"))
+    redis_enabled = parse_bool(env_or_setting("REDIS_ENABLED", "false"))
+    mongo_enabled = parse_bool(env_or_setting("MONGO_ENABLED", "false"))
+    sqlite_enabled = parse_bool(env_or_setting("SQLITE_ENABLED", "false"))
 
     if sqlite_enabled:
         raise RuntimeError("SQLite support is not implemented in this template yet")
@@ -182,30 +203,40 @@ def load_config(env_file: str | None = None, load_env: bool = True) -> AppConfig
     ]
 
     return AppConfig(
-        app_name=os.getenv("APP_NAME", "sanic-template"),
-        project_name=os.getenv("PROJECT_NAME", "sanic-template"),
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8000")),
-        workers=int(os.getenv("WORKERS", "1")),
-        debug=parse_bool(os.getenv("DEBUG", "false")),
-        language=normalize_locale_name(os.getenv("LANGUAGE", "zh-CN")),
+        app_name=env_or_setting("APP_NAME", "sanic-template"),
+        project_name=env_or_setting("PROJECT_NAME", "sanic-template"),
+        host=env_or_setting("HOST", "0.0.0.0"),
+        port=int(env_or_setting("PORT", "8000")),
+        workers=int(env_or_setting("WORKERS", "1")),
+        debug=parse_bool(env_or_setting("DEBUG", "false")),
+        language=normalize_locale_name(env_or_setting("LANGUAGE", "zh-CN")),
         enabled_databases=enabled_databases,
         mysql_enabled=mysql_enabled,
         redis_enabled=redis_enabled,
         mongo_enabled=mongo_enabled,
         sqlite_enabled=sqlite_enabled,
-        enable_auth=parse_bool(os.getenv("ENABLE_AUTH", "true")),
-        enable_signing=parse_bool(os.getenv("ENABLE_SIGNING", "true")),
-        enable_i18n=parse_bool(os.getenv("ENABLE_I18N", "true")),
-        enable_response_cache=parse_bool(os.getenv("ENABLE_RESPONSE_CACHE", "true")),
-        cors_enabled=parse_bool(os.getenv("CORS_ENABLED", "false")),
-        cors_origins=parse_csv(os.getenv("CORS_ORIGINS", "*")),
-        cors_allow_methods=parse_csv(os.getenv("CORS_ALLOW_METHODS", "GET,POST,PUT,PATCH,DELETE,OPTIONS")),
-        cors_allow_headers=parse_csv(os.getenv("CORS_ALLOW_HEADERS", "Content-Type,Authorization,X-Request-ID")),
-        cors_allow_credentials=parse_bool(os.getenv("CORS_ALLOW_CREDENTIALS", "false")),
-        cors_max_age=int(os.getenv("CORS_MAX_AGE", "86400")),
-        auth_white_ip_list=parse_csv(os.getenv("AUTH_WHITE_IP_LIST", "")),
-        signing_secret=os.getenv("SIGNING_SECRET", "change-me"),
+        enable_auth=parse_bool(env_or_setting("ENABLE_AUTH", "true")),
+        enable_signing=parse_bool(env_or_setting("ENABLE_SIGNING", "true")),
+        enable_i18n=parse_bool(env_or_setting("ENABLE_I18N", "true")),
+        enable_response_cache=parse_bool(env_or_setting("ENABLE_RESPONSE_CACHE", "true")),
+        cors_enabled=parse_bool(env_or_setting("CORS_ENABLED", "false")),
+        cors_origins=parse_csv(env_or_setting("CORS_ORIGINS", "*")),
+        cors_allow_methods=parse_csv(env_or_setting("CORS_ALLOW_METHODS", "GET,POST,PUT,PATCH,DELETE,OPTIONS")),
+        cors_allow_headers=parse_csv(env_or_setting("CORS_ALLOW_HEADERS", "Content-Type,Authorization,X-Request-ID")),
+        cors_allow_credentials=parse_bool(env_or_setting("CORS_ALLOW_CREDENTIALS", "false")),
+        cors_max_age=int(env_or_setting("CORS_MAX_AGE", "86400")),
+        auth_white_ip_list=parse_csv(env_or_setting("AUTH_WHITE_IP_LIST", "")),
+        signing_secret=env_or_setting("SIGNING_SECRET", "change-me"),
+        log_to_file=parse_bool(env_or_setting("LOG_TO_FILE", "false")),
+        log_level=str(env_or_setting("LOG_LEVEL", "DEBUG" if parse_bool(env_or_setting("DEBUG", "false")) else "INFO")),
+        log_path=env_or_setting("LOG_PATH", "runtime/logs"),
+        log_file=env_or_setting("LOG_FILE", "app.log"),
+        log_formatter=env_or_setting(
+            "LOG_FORMATTER",
+            "%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+        ),
+        log_max_bytes=int(env_or_setting("LOG_MAX_BYTES", "10485760")),
+        log_backup_count=int(env_or_setting("LOG_BACKUP_COUNT", "7")),
         mysql=build_mysql_config(),
         redis=build_redis_config(),
         mongo=build_mongo_config(),

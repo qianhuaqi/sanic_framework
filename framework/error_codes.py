@@ -253,3 +253,28 @@ def build_error_code_index(
         "modules": list(module_buckets.values()),
         "codes": [record.to_dict() for record in records],
     }
+
+
+def resolve_error_message(
+    code: int | str,
+    locale_root: str | Path | Iterable[str | Path],
+    locale: str = "zh-CN",
+    module_map_path: str | Path | None = None,
+    default: str | None = None,
+) -> str:
+    normalized_code = str(code).strip()
+    normalized_locale = normalize_locale_name(locale)
+    try:
+        records = parse_error_code_catalog(locale_root, module_map_path=module_map_path)
+    except (FileNotFoundError, ValueError):
+        return default or normalized_code
+    for record in records:
+        if record.code == normalized_code:
+            return (
+                record.messages.get(normalized_locale)
+                or record.messages.get("zh-CN")
+                or record.messages.get("en-US")
+                or default
+                or normalized_code
+            )
+    return default or normalized_code

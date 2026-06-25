@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # app/database/mongodb.py
 
-import motor.motor_asyncio
+from framework.database.dependencies import require_database_package
 
 
 class MongoDB:
@@ -11,13 +11,18 @@ class MongoDB:
         self.client = None
         self.db = None
 
+    @staticmethod
+    def _load_motor():
+        return require_database_package("motor.motor_asyncio", "motor", "mongo")
+
     async def connect(self):
+        motor_asyncio = self._load_motor()
         if 'username' in self.config and 'password' in self.config:
             uri = (f"mongodb://{self.config['username']}:{self.config['password']}@{self.config['host']}:"
                    f"{self.config['port']}/{self.config['database']}?authSource=admin")
-            self.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
+            self.client = motor_asyncio.AsyncIOMotorClient(uri)
         else:
-            self.client = motor.motor_asyncio.AsyncIOMotorClient(
+            self.client = motor_asyncio.AsyncIOMotorClient(
                 host=self.config['host'],
                 port=self.config['port']
             )

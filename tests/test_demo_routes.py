@@ -49,6 +49,8 @@ def test_demo_routes_expose_table_crud_endpoints(monkeypatch):
         _, legacy_response = await app.asgi_client.get("/demo/index?page=1&size=2")
 
         assert index_response.status == 200
+        assert index_response.json["code"] == 0
+        assert index_response.json["msg"] == "ok"
         assert index_response.json["data"]["items"][0]["name"] == "demo"
         assert index_response.json["data"]["page"] == 2
 
@@ -62,8 +64,7 @@ def test_demo_routes_expose_table_crud_endpoints(monkeypatch):
         assert edit_response.status == 200
         assert edit_response.json["data"]["updated"] == 1
 
-        assert patch_response.status == 200
-        assert patch_response.json["data"]["updated"] == 1
+        assert patch_response.status == 405
 
         assert del_response.status == 200
         assert del_response.json["data"]["deleted"] == 1

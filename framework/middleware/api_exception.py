@@ -1,14 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# app/middleware/api_exception.py
 
-from sanic.exceptions import SanicException
+from framework.exception import APIException as FrameworkAPIException
 
 
-class APIException(SanicException):
-    def __init__(self, errcode, errmsg, data=None, status_code=400):
-        super().__init__(message=errmsg, status_code=status_code)
-        self.errcode = errcode
-        self.errmsg = errmsg
-        self.data = data or {}
-        self.status_code = status_code
+class APIException(FrameworkAPIException):
+    def __init__(self, errcode, errmsg=None, data=None, status_code=400, request=None):
+        super().__init__(errcode=errcode, errmsg=errmsg, data=data, status_code=status_code, request=request)

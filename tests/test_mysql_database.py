@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 from framework.database.mysql import MySQLDatabase
 
@@ -66,7 +67,11 @@ def test_mysql_database_routes_reads_and_writes(monkeypatch):
             created.append(kwargs)
             return pool
 
-        monkeypatch.setattr("framework.database.mysql.aiomysql.create_pool", fake_create_pool)
+        monkeypatch.setattr(
+            MySQLDatabase,
+            "_load_aiomysql",
+            staticmethod(lambda: (SimpleNamespace(create_pool=fake_create_pool), object)),
+        )
 
         db = MySQLDatabase(
             {

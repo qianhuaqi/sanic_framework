@@ -9,5 +9,6 @@ def test_health_endpoint_without_databases():
     _, response = asyncio.run(app.asgi_client.get("/health"))
 
     assert response.status == 200
-    assert response.json["errcode"] == 0
+    assert response.json["code"] == 0
+    assert response.json["msg"] == "ok"
     assert response.json["data"]["status"] == "ok"

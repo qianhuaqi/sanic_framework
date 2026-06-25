@@ -1,5 +1,6 @@
 from importlib import import_module
 import os
+from pathlib import Path
 
 from sanic import Sanic
 
@@ -33,6 +34,16 @@ def _get_project_extension_modules():
     return get_modules()
 
 
+def _register_public_static(app):
+    root = Path.cwd()
+    public_dir = root / "public"
+    docs_dir = public_dir / "docs"
+    if public_dir.exists():
+        app.static("/public", str(public_dir), name="public")
+    if docs_dir.exists():
+        app.static("/docs", str(docs_dir), name="docs")
+
+
 def create_app():
     config = load_config()
     app = Sanic(config.app_name)
@@ -42,13 +53,14 @@ def create_app():
     register_lifecycle(app, _get_project_extension_modules())
 
     register_blueprints(app, _get_project_blueprints(config))
+    _register_public_static(app)
 
     @app.exception(APIException)
     async def handle_api_exception(request, exception):
         return json_response(
             data=exception.data,
-            errcode=exception.errcode,
-            errmsg=exception.errmsg,
+            code=exception.code,
+            msg=exception.msg,
             status=exception.status_code,
         )
 

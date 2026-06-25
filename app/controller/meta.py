@@ -27,6 +27,7 @@ def _language_roots(version: str = "") -> list[Path]:
     roots = []
     if version:
         roots.append(root / "app" / version / "language")
+    roots.append(root / "app" / "language")
     roots.append(root / "language")
     roots.append(root / "framework" / "language")
     return [item for item in roots if item.exists()]
@@ -38,9 +39,9 @@ def _module_map_path(version: str = "") -> Path:
         version_map = root / "app" / version / "language" / "modules.ini"
         if version_map.exists():
             return version_map
-    language_map = root / "language" / "modules.ini"
-    if language_map.exists():
-        return language_map
+    for language_map in (root / "app" / "language" / "modules.ini", root / "language" / "modules.ini"):
+        if language_map.exists():
+            return language_map
     return root / "framework" / "modules.ini"
 
 

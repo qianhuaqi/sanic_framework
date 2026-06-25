@@ -4,6 +4,8 @@
 import asyncio
 import time
 
+from framework.database.dependencies import require_database_package
+
 
 class RedisManager:
     def __init__(self, config):
@@ -22,10 +24,10 @@ class RedisManager:
 
     @staticmethod
     def _load_redis_classes():
-        from redis.asyncio import Redis
-        from redis.asyncio.sentinel import Sentinel
+        redis_asyncio = require_database_package("redis.asyncio", "redis", "redis")
+        redis_sentinel = require_database_package("redis.asyncio.sentinel", "redis", "redis")
 
-        return Redis, Sentinel
+        return redis_asyncio.Redis, redis_sentinel.Sentinel
 
     async def connect(self):
         async with self.lock:

@@ -47,6 +47,13 @@ def test_load_config_defaults_disable_databases(monkeypatch):
         "CORS_ALLOW_HEADERS",
         "CORS_ALLOW_CREDENTIALS",
         "CORS_MAX_AGE",
+        "LOG_TO_FILE",
+        "LOG_LEVEL",
+        "LOG_PATH",
+        "LOG_FILE",
+        "LOG_FORMATTER",
+        "LOG_MAX_BYTES",
+        "LOG_BACKUP_COUNT",
     ):
         monkeypatch.delenv(key, raising=False)
     config = load_config(load_env=False)
@@ -63,6 +70,10 @@ def test_load_config_defaults_disable_databases(monkeypatch):
     assert config.cors_enabled is False
     assert config.cors_origins == ["*"]
     assert config.cors_allow_methods == ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    assert config.log_to_file is False
+    assert config.log_level == "INFO"
+    assert config.log_path == "runtime/logs"
+    assert config.log_file == "app.log"
 
 
 def test_load_config_normalizes_language(monkeypatch):
@@ -71,6 +82,33 @@ def test_load_config_normalizes_language(monkeypatch):
     config = load_config()
 
     assert config.language == "zh-CN"
+
+
+def test_load_config_reads_project_defaults_and_env_overrides(monkeypatch, tmp_path):
+    defaults = tmp_path / "project_defaults.py"
+    defaults.write_text(
+        'APP_NAME = "from-config"\n'
+        "PORT = 9100\n"
+        "CORS_ENABLED = True\n"
+        'CORS_ORIGINS = ["https://config.test"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("PROJECT_CONFIG_MODULE", "project_defaults")
+    monkeypatch.delenv("APP_NAME", raising=False)
+    monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+
+    config = load_config(load_env=False)
+
+    assert config.app_name == "from-config"
+    assert config.port == 9100
+    assert config.cors_enabled is True
+    assert config.cors_origins == ["https://config.test"]
+
+    monkeypatch.setenv("APP_NAME", "from-env")
+    config = load_config(load_env=False)
+    assert config.app_name == "from-env"
 
 
 def test_load_config_with_single_switches(monkeypatch):
@@ -108,6 +146,26 @@ def test_load_config_parses_cors(monkeypatch):
     assert config.cors_allow_headers == ["Content-Type", "Authorization"]
     assert config.cors_allow_credentials is True
     assert config.cors_max_age == 600
+
+
+def test_load_config_parses_logging(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOG_TO_FILE", "true")
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("LOG_PATH", str(tmp_path / "logs"))
+    monkeypatch.setenv("LOG_FILE", "demo.log")
+    monkeypatch.setenv("LOG_FORMATTER", "%(levelname)s:%(message)s")
+    monkeypatch.setenv("LOG_MAX_BYTES", "2048")
+    monkeypatch.setenv("LOG_BACKUP_COUNT", "3")
+
+    config = load_config()
+
+    assert config.log_to_file is True
+    assert config.log_level == "DEBUG"
+    assert config.log_path == str(tmp_path / "logs")
+    assert config.log_file == "demo.log"
+    assert config.log_formatter == "%(levelname)s:%(message)s"
+    assert config.log_max_bytes == 2048
+    assert config.log_backup_count == 3
 
 
 def test_load_config_parses_mysql_master_slave_and_redis_sentinel(monkeypatch):

@@ -48,8 +48,8 @@ def maintenance_required(handler):
                     data = {}
 
             return response.json({
-                'errcode': 0,
-                'errmsg': '系统维护中，请稍后再试',
+                'code': 0,
+                'msg': '系统维护中，请稍后再试',
                 'data': data
             }, status=208)
         else:

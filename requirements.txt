@@ -1,7 +1,7 @@
 sanic
 asyncmy
 motor
-redis
+redis>=5,<7
 aiomysql
 python-dotenv
 sanic-babel

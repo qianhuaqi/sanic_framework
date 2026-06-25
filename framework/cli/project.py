@@ -11,6 +11,11 @@ REQUIRED_FILES = [
     "run.py",
     ".env.example",
     "README.md",
+    "app/bootstrap.py",
+    "app/route.py",
+    "config/defaults.py",
+    "app/language/modules.ini",
+    "public/docs/index.md",
 ]
 
 
@@ -68,8 +73,8 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
         "app/v1/language/zh-CN/ERROR",
         "app/v1/language/en-US/ERROR",
         "config",
-        "language/zh-CN/ERROR",
-        "language/en-US/ERROR",
+        "app/language/zh-CN/ERROR",
+        "app/language/en-US/ERROR",
         "public/docs",
     )
     for directory in directories:
@@ -78,7 +83,7 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
         if "public" not in directory:
             current = dir_path
             while current != target_dir:
-                if current.name not in {"public", "docs"}:
+                if current.name not in {"public", "docs", "language", "zh-CN", "en-US", "ERROR"}:
                     _write_if_missing(current / "__init__.py", "__all__ = []\n")
                 current = current.parent
 
@@ -129,10 +134,25 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
     )
     _write_if_missing(target_dir / "app" / "common.py", "__all__ = []\n")
     _write_if_missing(target_dir / "app" / "event.py", "__all__ = []\n")
-    _write_if_missing(target_dir / "config" / "defaults.py", f'PROJECT_NAME = "{options.project_name}"\n')
+    _write_if_missing(
+        target_dir / "config" / "defaults.py",
+        f'APP_NAME = "{options.app_name}"\n'
+        f'PROJECT_NAME = "{options.project_name}"\n'
+        f"PORT = {options.port}\n"
+        'LANGUAGE = "zh-CN"\n'
+        'LOCALE_DIR = "app/language"\n'
+        "CORS_ENABLED = False\n"
+        "LOG_TO_FILE = False\n"
+        'LOG_LEVEL = "INFO"\n'
+        'LOG_PATH = "runtime/logs"\n'
+        'LOG_FILE = "app.log"\n'
+        'LOG_FORMATTER = "%(asctime)s [%(levelname)s] [%(name)s] %(message)s"\n'
+        "LOG_MAX_BYTES = 10485760\n"
+        "LOG_BACKUP_COUNT = 7\n",
+    )
     _write_if_missing(target_dir / "public" / "docs" / "index.md", f"# {options.project_name} API Docs\n")
     _write_if_missing(
-        target_dir / "language" / "modules.ini",
+        target_dir / "app" / "language" / "modules.ini",
         "[Modules]\n"
         "100000-109999 = language\n"
         "110000-119999 = user\n"

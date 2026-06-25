@@ -44,6 +44,39 @@ def _pascal_case(value: str) -> str:
     return "".join(part.capitalize() for part in value.split("_") if part)
 
 
+def _route_import_line(version_name: str, module_name: str) -> str:
+    return f"    from app.{version_name}.controller.{module_name} import bp as {version_name}_{module_name}_bp\n"
+
+
+def _route_append_line(version_name: str, module_name: str) -> str:
+    return f"    blueprints.append({version_name}_{module_name}_bp)\n"
+
+
+def _register_module_route(root_path: Path, version_name: str, module_name: str) -> bool:
+    route_path = root_path / "app" / "route.py"
+    if not route_path.exists():
+        return False
+    text = route_path.read_text(encoding="utf-8")
+    import_line = _route_import_line(version_name, module_name)
+    append_line = _route_append_line(version_name, module_name)
+    changed = False
+    if import_line not in text:
+        marker = "    from app.controller.health import bp as health_bp\n"
+        if marker in text:
+            text = text.replace(marker, marker + import_line, 1)
+        else:
+            text = text.replace("def get_blueprints(config=None):\n", "def get_blueprints(config=None):\n" + import_line, 1)
+        changed = True
+    if append_line not in text:
+        marker = "    blueprints = [health_bp]\n"
+        if marker in text:
+            text = text.replace(marker, marker + append_line, 1)
+            changed = True
+    if changed:
+        route_path.write_text(text, encoding="utf-8")
+    return changed
+
+
 def add_version(version: str, root: str | Path = ".") -> list[Path]:
     root_path = Path(root).resolve()
     version_name = normalize_version(version)
@@ -56,6 +89,13 @@ def add_version(version: str, root: str | Path = ".") -> list[Path]:
         version_root / "controller",
         version_root / "model",
         version_root / "view",
+    ):
+        existed = directory.exists()
+        _touch_init(directory)
+        if not existed:
+            created.append(directory)
+
+    for directory in (
         version_root / "language",
         version_root / "language" / "zh-CN",
         version_root / "language" / "zh-CN" / "ERROR",
@@ -63,7 +103,7 @@ def add_version(version: str, root: str | Path = ".") -> list[Path]:
         version_root / "language" / "en-US" / "ERROR",
     ):
         existed = directory.exists()
-        _touch_init(directory)
+        directory.mkdir(parents=True, exist_ok=True)
         if not existed:
             created.append(directory)
 
@@ -88,73 +128,59 @@ def make_module(version: str, module: str, root: str | Path = ".") -> list[Path]
 from sanic import Blueprint
 
 from app.{version_name}.model.{module_name} import {model_class}
-from framework.exception import APIException
+from framework.controller import require_mysql, require_payload
+from framework.exception import raise_code
 from framework.response import json_response
 
 
 bp = Blueprint("{version_name}_{module_name}", url_prefix="/{version_name}/{module_name}")
 
 
-def _get_mysql(request):
-    db = getattr(request.app.ctx, "mysql", None)
-    if db is None:
-        raise APIException(errcode=503000, errmsg="mysql is not enabled", status_code=503)
-    return db
-
-
-def _get_json_payload(request):
-    payload = request.json or {{}}
-    if not isinstance(payload, dict):
-        raise APIException(errcode=400000, errmsg="invalid json body", status_code=400)
-    return payload
-
-
 @bp.get("/")
 async def index(request):
+    require_mysql(request)
     page = int(request.args.get("page", 1))
     size = int(request.args.get("size", 10))
     use_master = request.args.get("use_master", "").lower() in {{"1", "true", "yes", "on"}}
+    request.app.ctx.logger.debug("{module_name}.index page=%s size=%s use_master=%s", page, size, use_master)
     result = await {model_class}(request).get_pagination(page=page, size=size, use_master=use_master)
     return json_response(result)
 
 
 @bp.get("/<data_id>")
 async def info(request, data_id):
+    require_mysql(request)
     use_cache = request.args.get("use_cache", "1").lower() not in {{"0", "false", "no", "off"}}
     use_master = request.args.get("use_master", "").lower() in {{"1", "true", "yes", "on"}}
+    request.app.ctx.logger.debug("{module_name}.info id=%s use_cache=%s use_master=%s", data_id, use_cache, use_master)
     item = await {model_class}(request).get_one(data_id, use_master=use_master, use_cache=use_cache)
     if item is None:
-        raise APIException(errcode=404000, errmsg="{module_name} row not found", status_code=404)
+        raise_code(request, 990202, status_code=404, default="{module_name} row not found")
     return json_response(item)
 
 
 @bp.post("/")
 async def create(request):
-    payload = _get_json_payload(request)
+    require_mysql(request)
+    payload = require_payload(request)
+    request.app.ctx.logger.info("{module_name}.create fields=%s", sorted(payload.keys()))
     data_id = await {model_class}(request).insert(**payload)
     return json_response({{"id": data_id, "payload": payload}}, status=201)
 
 
 @bp.put("/<data_id>")
 async def update(request, data_id):
-    payload = _get_json_payload(request)
-    if not payload:
-        raise APIException(errcode=400002, errmsg="update payload is empty", status_code=400)
-    result = await {model_class}(request).update(data_id, **payload)
-    return json_response({{"id": data_id, "updated": result}})
-
-
-@bp.patch("/<data_id>")
-async def partial_update(request, data_id):
-    payload = _get_json_payload(request)
-    if not payload:
-        raise APIException(errcode=400002, errmsg="update payload is empty", status_code=400)
+    require_mysql(request)
+    payload = require_payload(request)
+    request.app.ctx.logger.info("{module_name}.update id=%s fields=%s", data_id, sorted(payload.keys()))
     result = await {model_class}(request).update(data_id, **payload)
     return json_response({{"id": data_id, "updated": result}})
 
 
 @bp.delete("/<data_id>")
 async def delete(request, data_id):
+    require_mysql(request)
+    request.app.ctx.logger.info("{module_name}.delete id=%s", data_id)
     result = await {model_class}(request).delete(data_id)
     return json_response({{"id": data_id, "deleted": result}})
 '''
@@ -183,7 +209,6 @@ RESTful routes:
 - `GET /{version_name}/{module_name}/<id>`
 - `POST /{version_name}/{module_name}`
 - `PUT /{version_name}/{module_name}/<id>`
-- `PATCH /{version_name}/{module_name}/<id>`
 - `DELETE /{version_name}/{module_name}/<id>`
 '''
     files = {
@@ -195,6 +220,8 @@ RESTful routes:
     for path, content in files.items():
         if _write_if_missing(path, content):
             created.append(path)
+    if _register_module_route(root_path, version_name, module_name):
+        created.append(root_path / "app" / "route.py")
     return created
 
 

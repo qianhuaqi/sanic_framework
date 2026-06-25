@@ -4,9 +4,7 @@
 
 import time
 
-import aiomysql
-from aiomysql.cursors import DictCursor
-
+from framework.database.dependencies import require_database_package
 from framework.helper import write_verify_log
 
 
@@ -40,7 +38,14 @@ class MySQLDatabase:
             "pool_recycle": int(self.config.get("pool_recycle", 3600)),
         }
 
+    @staticmethod
+    def _load_aiomysql():
+        aiomysql = require_database_package("aiomysql", "aiomysql", "mysql")
+        cursors = require_database_package("aiomysql.cursors", "aiomysql", "mysql")
+        return aiomysql, cursors.DictCursor
+
     async def connect(self):
+        aiomysql, _ = self._load_aiomysql()
         master = self.config.get("master") or self.config
         self.master_pool = await aiomysql.create_pool(**self._pool_kwargs(master))
         self.read_pools = []
@@ -70,8 +75,9 @@ class MySQLDatabase:
     async def _query(self, pool, query, args=None, fetch="all", request=None):
         if not pool:
             raise RuntimeError("MySQL database is not connected")
+        _, dict_cursor = self._load_aiomysql()
         async with pool.acquire() as conn:
-            async with conn.cursor(DictCursor) as cursor:
+            async with conn.cursor(dict_cursor) as cursor:
                 await cursor.execute(query, args or ())
                 if fetch == "one":
                     result = await cursor.fetchone()
@@ -122,8 +128,9 @@ class MySQLDatabase:
         pool = self._write_pool()
         if not pool:
             raise RuntimeError("MySQL database is not connected")
+        _, dict_cursor = self._load_aiomysql()
         async with pool.acquire() as conn:
-            async with conn.cursor(DictCursor) as cursor:
+            async with conn.cursor(dict_cursor) as cursor:
                 await cursor.executemany(query, args_list)
                 payload = cursor.rowcount
                 if request is not None:
