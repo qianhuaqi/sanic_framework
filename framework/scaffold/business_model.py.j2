@@ -1,0 +1,7 @@
+from framework.model.business import BusinessModel
+
+
+class {{ model_class }}(BusinessModel):
+    async def get_detail(self, data_id):
+        self.logger.debug("{{ business_name }}.get_detail id=%s", data_id)
+        return {"id": data_id}

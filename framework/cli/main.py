@@ -6,6 +6,7 @@ from pathlib import Path
 
 from framework.cli.project import ProjectOptions
 from framework.cli.project import check_project
+from framework.cli.project import render_scaffold_template
 from framework.cli.project import render_project_files
 
 
@@ -133,96 +134,15 @@ def make_module(version: str, module: str, root: str | Path = ".") -> list[Path]
     docs_root.mkdir(parents=True, exist_ok=True)
     _touch_init(view_dir)
 
-    controller = f'''from __future__ import annotations
-
-from sanic import Blueprint
-
-from app.{version_name}.model.table.{module_name} import {model_class}
-from framework.controller import require_mysql, require_payload
-from framework.exception import raise_code
-from framework.response import json_response
-
-
-bp = Blueprint("{version_name}_{module_name}", url_prefix="/{version_name}/{module_name}")
-
-
-@bp.get("/")
-async def index(request):
-    require_mysql(request)
-    page = int(request.args.get("page", 1))
-    size = int(request.args.get("size", 10))
-    use_master = request.args.get("use_master", "").lower() in {{"1", "true", "yes", "on"}}
-    request.app.ctx.logger.debug("{module_name}.index page=%s size=%s use_master=%s", page, size, use_master)
-    result = await {model_class}(request).get_pagination(page=page, size=size, use_master=use_master)
-    return json_response(result)
-
-
-@bp.get("/<data_id>")
-async def info(request, data_id):
-    require_mysql(request)
-    use_cache = request.args.get("use_cache", "1").lower() not in {{"0", "false", "no", "off"}}
-    use_master = request.args.get("use_master", "").lower() in {{"1", "true", "yes", "on"}}
-    request.app.ctx.logger.debug("{module_name}.info id=%s use_cache=%s use_master=%s", data_id, use_cache, use_master)
-    item = await {model_class}(request).get_one(data_id, use_master=use_master, use_cache=use_cache)
-    if item is None:
-        raise_code(request, 990202, status_code=404)
-    return json_response(item)
-
-
-@bp.post("/")
-async def create(request):
-    require_mysql(request)
-    payload = require_payload(request)
-    request.app.ctx.logger.info("{module_name}.create fields=%s", sorted(payload.keys()))
-    data_id = await {model_class}(request).insert(**payload)
-    return json_response({{"id": data_id, "payload": payload}}, status=201)
-
-
-@bp.put("/<data_id>", name="update_put")
-@bp.patch("/<data_id>", name="update_patch")
-async def update(request, data_id):
-    require_mysql(request)
-    payload = require_payload(request)
-    request.app.ctx.logger.info("{module_name}.update id=%s fields=%s", data_id, sorted(payload.keys()))
-    result = await {model_class}(request).update(data_id, **payload)
-    return json_response({{"id": data_id, "updated": result}})
-
-
-@bp.delete("/<data_id>")
-async def delete(request, data_id):
-    require_mysql(request)
-    request.app.ctx.logger.info("{module_name}.delete id=%s", data_id)
-    result = await {model_class}(request).delete(data_id)
-    return json_response({{"id": data_id, "deleted": result}})
-'''
-    model = f'''from framework.model.model import Model
-
-
-class {model_class}(Model):
-    table_name = "{module_name}"
-    read_source = "auto"
-    cache_enabled = True
-'''
-    view = f'''<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <title>{version_name}/{module_name}</title>
-</head>
-<body></body>
-</html>
-'''
-    docs = f'''# {version_name}/{module_name}
-
-RESTful routes:
-
-- `GET /{version_name}/{module_name}`
-- `GET /{version_name}/{module_name}/<id>`
-- `POST /{version_name}/{module_name}`
-- `PUT /{version_name}/{module_name}/<id>`
-- `PATCH /{version_name}/{module_name}/<id>`
-- `DELETE /{version_name}/{module_name}/<id>`
-'''
+    controller = render_scaffold_template(
+        "controller.py.j2",
+        version_name=version_name,
+        module_name=module_name,
+        model_class=model_class,
+    )
+    model = render_scaffold_template("table_model.py.j2", model_class=model_class, table_name=module_name)
+    view = render_scaffold_template("view.html.j2", version_name=version_name, module_name=module_name)
+    docs = render_scaffold_template("docs.md.j2", version_name=version_name, module_name=module_name)
     files = {
         version_root / "controller" / f"{module_name}.py": controller,
         version_root / "model" / "table" / f"{module_name}.py": model,
@@ -243,14 +163,7 @@ def make_model(version: str, table: str, root: str | Path = ".") -> list[Path]:
     table_name = normalize_table_name(table)
     model_class = f"{_pascal_case(table_name)}Model"
     created = add_version(version_name, root_path)
-    model = f'''from framework.model.model import Model
-
-
-class {model_class}(Model):
-    table_name = "{table_name}"
-    read_source = "auto"
-    cache_enabled = True
-'''
+    model = render_scaffold_template("table_model.py.j2", model_class=model_class, table_name=table_name)
     path = root_path / "app" / version_name / "model" / "table" / f"{table_name}.py"
     if _write_if_missing(path, model):
         created.append(path)
@@ -263,14 +176,11 @@ def make_business_model(version: str, business: str, root: str | Path = ".") -> 
     business_name = normalize_business_name(business)
     model_class = f"{_pascal_case(business_name)}BusinessModel"
     created = add_version(version_name, root_path)
-    model = f'''from framework.model.business import BusinessModel
-
-
-class {model_class}(BusinessModel):
-    async def get_detail(self, data_id):
-        self.logger.debug("{business_name}.get_detail id=%s", data_id)
-        return {{"id": data_id}}
-'''
+    model = render_scaffold_template(
+        "business_model.py.j2",
+        model_class=model_class,
+        business_name=business_name,
+    )
     path = root_path / "app" / version_name / "model" / "business" / f"{business_name}.py"
     if _write_if_missing(path, model):
         created.append(path)
@@ -331,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
             enable_signing=not args.disable_signing,
             enable_i18n=not args.disable_i18n,
             enable_response_cache=not args.disable_response_cache,
-            include_example=True,
+            include_example=False,
         )
         render_project_files(Path(args.root), options)
         return 0

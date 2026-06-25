@@ -5,7 +5,7 @@ import pytest
 
 from framework.app import create_app
 from framework.error_codes import build_error_code_index, parse_error_code_catalog
-from framework.exception import get_error_message
+from framework.exception import get_error_message, language_roots
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +56,18 @@ def test_error_code_catalog_uses_version_language_before_app_language(tmp_path):
     item = index["codes"][0]
     assert item["messages"]["zh-CN"] == "版本用户不存在"
     assert item["messages"]["en-US"] == "User does not exist"
+
+
+def test_language_roots_do_not_include_legacy_top_level_language(tmp_path, monkeypatch):
+    (tmp_path / "app" / "v1" / "language").mkdir(parents=True)
+    (tmp_path / "app" / "language").mkdir(parents=True)
+    (tmp_path / "language").mkdir(parents=True)
+    (tmp_path / "framework" / "language").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    roots = [path.relative_to(tmp_path).as_posix() for path in language_roots("v1")]
+
+    assert roots == ["app/v1/language", "app/language", "framework/language"]
 
 
 def test_get_error_message_reads_language_package():

@@ -28,7 +28,6 @@ def language_roots(version: str = "") -> list[Path]:
     if version:
         roots.append(root / "app" / version / "language")
     roots.append(root / "app" / "language")
-    roots.append(root / "language")
     roots.append(root / "framework" / "language")
     return [item for item in roots if item.exists()]
 
@@ -41,7 +40,6 @@ def module_map_path(version: str = "") -> Path | None:
     candidates.extend(
         [
             root / "app" / "language" / "modules.ini",
-            root / "language" / "modules.ini",
             root / "framework" / "modules.ini",
         ]
     )
@@ -58,7 +56,7 @@ def get_error_message(request, code, default=None) -> str:
     roots = language_roots(_request_version(request))
     map_path = module_map_path(_request_version(request))
     if not roots or map_path is None:
-        return default or str(code)
+        return str(code)
     return resolve_error_message(code, roots, locale=locale, module_map_path=map_path, default=default)
 
 
@@ -82,7 +80,7 @@ class APIException(Exception):
         if errmsg is not None:
             msg = errmsg
         if msg is None:
-            msg = get_error_message(request, code, default="internal error")
+            msg = get_error_message(request, code)
         super().__init__(msg)
         self.code = code
         self.msg = msg
