@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from framework.cli.project import ProjectOptions, check_project, render_project_files
+from lingshu.cli.project import ProjectOptions, check_project, render_project_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,7 +90,7 @@ def test_initialized_project_can_create_app_and_serve_health(tmp_path):
     env["SANIC_ENV"] = "testing"
     script = (
         "import asyncio\n"
-        "from framework.app import create_app\n"
+        "from lingshu.app import create_app\n"
         "async def main():\n"
         "    app = create_app()\n"
         "    _, response = await app.asgi_client.get('/health')\n"
@@ -127,7 +127,7 @@ def test_initialized_project_make_module_is_registered(tmp_path):
     env["PYTHONPATH"] = f"{tmp_path}{os.pathsep}{ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
     env["SANIC_ENV"] = "testing"
     add_result = subprocess.run(
-        [sys.executable, "-m", "framework.cli.main", "add", "v1", "--root", str(tmp_path)],
+        [sys.executable, "-m", "lingshu.cli.main", "add", "v1", "--root", str(tmp_path)],
         cwd=tmp_path,
         env=env,
         text=True,
@@ -136,7 +136,7 @@ def test_initialized_project_make_module_is_registered(tmp_path):
     assert add_result.returncode == 0, add_result.stderr
 
     make_result = subprocess.run(
-        [sys.executable, "-m", "framework.cli.main", "make", "module", "v1", "demo", "--root", str(tmp_path)],
+        [sys.executable, "-m", "lingshu.cli.main", "make", "module", "v1", "demo", "--root", str(tmp_path)],
         cwd=tmp_path,
         env=env,
         text=True,
@@ -150,7 +150,7 @@ def test_initialized_project_make_module_is_registered(tmp_path):
 
     script = (
         "import asyncio\n"
-        "from framework.app import create_app\n"
+        "from lingshu.app import create_app\n"
         "async def main():\n"
         "    app = create_app()\n"
         "    _, response = await app.asgi_client.get('/v1/demo')\n"

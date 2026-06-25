@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
-from framework.logging import setup_logging
+from lingshu.logging import setup_logging
+from lingshu.system import sanic_adapter
 
 
 def test_setup_logging_writes_to_configured_file(tmp_path):
@@ -22,9 +23,10 @@ def test_setup_logging_writes_to_configured_file(tmp_path):
     )
 
     setup_logging(app)
-    app.ctx.logger.debug("debug message")
+    logger = sanic_adapter.get_app_logger(app)
+    logger.debug("debug message")
 
-    for handler in app.ctx.logger.handlers:
+    for handler in logger.handlers:
         handler.flush()
 
     assert (log_path / "app.log").read_text(encoding="utf-8").strip() == "DEBUG:debug message"

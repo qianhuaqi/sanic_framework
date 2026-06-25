@@ -1,10 +1,10 @@
 from sanic import Blueprint
 
-from framework.error_codes import build_error_code_index, normalize_locale_name
-from framework.exception import language_roots, module_map_path, raise_code
-from framework.response import json_response
-from framework.router import RoutePolicy, set_blueprint_policy
-from framework.versioning import normalize_version
+from lingshu.error_codes import build_error_code_index, normalize_locale_name
+from lingshu.exception import language_roots, module_map_path, raise_code
+from lingshu.response import json_response
+from lingshu.router import RoutePolicy, set_blueprint_policy
+from lingshu.versioning import normalize_version
 
 
 bp = Blueprint("meta", url_prefix="/meta")

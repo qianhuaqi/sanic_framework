@@ -1,7 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
-from framework.database.mysql import MySQLDatabase
+from lingshu.database.mysql import MySQLDatabase
 
 
 class FakeCursor:

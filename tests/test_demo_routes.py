@@ -1,6 +1,7 @@
 import asyncio
 
-from framework.app import create_app
+from lingshu.app import create_app
+from lingshu.system import sanic_adapter
 from app.v1.controller import demo as demo_controller
 
 
@@ -13,8 +14,8 @@ class DummyRedis:
 
 
 class FakeDemoModel:
-    def __init__(self, request):
-        self.request = request
+    def __init__(self):
+        pass
 
     async def get_pagination(self, page=1, size=10, data_id=0, order_by=None, use_master=None, **kwargs):
         return {"items": [{"id": 1, "name": "demo"}], "page": page, "per_page": size, "total": 1, "pages": 1}
@@ -37,8 +38,8 @@ def test_demo_routes_expose_table_crud_endpoints(monkeypatch):
 
     async def scenario():
         app = create_app()
-        app.ctx.mysql = DummyDB()
-        app.ctx.redis = DummyRedis()
+        sanic_adapter.set_resource(app, "mysql", DummyDB())
+        sanic_adapter.set_resource(app, "redis", DummyRedis())
 
         _, index_response = await app.asgi_client.get("/v1/demo?page=2&size=5")
         _, info_response = await app.asgi_client.get("/v1/demo/7?use_cache=1")

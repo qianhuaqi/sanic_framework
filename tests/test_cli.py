@@ -1,13 +1,13 @@
-from framework.cli.main import add_version
-from framework.cli.main import main
-from framework.cli.main import make_business_model
-from framework.cli.main import make_model
-from framework.cli.main import make_module
-from framework.cli.main import normalize_module_name
-from framework.cli.main import normalize_version
-from framework.cli.project import ProjectOptions
-from framework.cli.project import check_project
-from framework.cli.project import render_project_files
+from lingshu.cli.main import add_version
+from lingshu.cli.main import main
+from lingshu.cli.main import make_business_model
+from lingshu.cli.main import make_model
+from lingshu.cli.main import make_module
+from lingshu.cli.main import normalize_module_name
+from lingshu.cli.main import normalize_version
+from lingshu.cli.project import ProjectOptions
+from lingshu.cli.project import check_project
+from lingshu.cli.project import render_project_files
 
 
 def _render_project(tmp_path):
@@ -88,15 +88,15 @@ def test_cli_make_requires_explicit_add_version(tmp_path, capsys):
     _render_project(tmp_path)
 
     assert main(["make", "module", "v1", "demo", "--root", str(tmp_path)]) == 1
-    assert "Version 'v1' does not exist. Run: sanic-framework add v1" in capsys.readouterr().err
+    assert "Version 'v1' does not exist. Run: lingshu add v1" in capsys.readouterr().err
     assert not (tmp_path / "app" / "v1").exists()
 
     assert main(["make", "model", "v1", "user", "--root", str(tmp_path)]) == 1
-    assert "Version 'v1' does not exist. Run: sanic-framework add v1" in capsys.readouterr().err
+    assert "Version 'v1' does not exist. Run: lingshu add v1" in capsys.readouterr().err
     assert not (tmp_path / "app" / "v1").exists()
 
     assert main(["make", "business-model", "v1", "permission_assign", "--root", str(tmp_path)]) == 1
-    assert "Version 'v1' does not exist. Run: sanic-framework add v1" in capsys.readouterr().err
+    assert "Version 'v1' does not exist. Run: lingshu add v1" in capsys.readouterr().err
     assert not (tmp_path / "app" / "v1").exists()
 
 
@@ -159,8 +159,9 @@ def test_cli_make_module_scaffolds_restful_module(tmp_path):
     assert 'msg="' not in controller_text
     assert "errmsg=" not in controller_text
     assert "require_payload(request)" in controller_text
-    assert 'request.app.ctx.logger.debug("demo.index' in controller_text
-    assert 'request.app.ctx.logger.info("demo.create' in controller_text
+    assert "from lingshu import logger" in controller_text
+    assert 'logger.debug("demo.index' in controller_text
+    assert 'logger.info("demo.create' in controller_text
 
     route_text = route.read_text(encoding="utf-8")
     assert "from app.v1.controller.demo import bp as v1_demo_bp" in route_text
@@ -305,9 +306,10 @@ def test_check_project_allows_action_controller_and_flags_action_errors(tmp_path
         "from sanic import Blueprint\n"
         "bp = Blueprint('v1_login')\n"
         "CONTROLLER_KIND = 'action'\n"
+        "from lingshu import logger\n"
         "@bp.post('/')\n"
         "async def login(request):\n"
-        "    request.app.ctx.logger.info('login attempt')\n"
+        "    logger.info('login attempt')\n"
         "    return {'status': 'ok'}\n",
         encoding="utf-8",
     )
@@ -327,6 +329,30 @@ def test_check_project_allows_action_controller_and_flags_action_errors(tmp_path
     issues = check_project(tmp_path)
 
     assert any("app/v1/controller/login.py" in issue and "hard coded" in issue for issue in issues)
+
+
+def test_check_project_detects_phase_b_forbidden_app_access(tmp_path):
+    _render_project(tmp_path)
+    add_version("v1", root=tmp_path)
+    path = tmp_path / "app" / "v1" / "controller" / "login.py"
+    path.write_text(
+        "import framework\n"
+        "from lingshu.system import context\n"
+        "from sanic import Blueprint\n"
+        "bp = Blueprint('v1_login')\n"
+        "CONTROLLER_KIND = 'action'\n"
+        "@bp.post('/')\n"
+        "async def login(request):\n"
+        "    request.app.ctx.logger.info('login attempt')\n"
+        "    return {'status': 'ok'}\n",
+        encoding="utf-8",
+    )
+
+    issues = check_project(tmp_path)
+
+    assert any("legacy framework import" in issue for issue in issues)
+    assert any("must not import lingshu.system" in issue for issue in issues)
+    assert any("direct request.app.ctx/app.ctx access is forbidden" in issue for issue in issues)
 
 
 def test_check_project_resource_controller_route_contract(tmp_path):
@@ -368,7 +394,7 @@ def test_check_project_detects_illegal_business_model_contract(tmp_path):
     add_version("v1", root=tmp_path)
     path = tmp_path / "app" / "v1" / "model" / "business" / "permission_assign.py"
     path.write_text(
-        "from framework.model.business import BusinessModel\n"
+        "from lingshu.model.business import BusinessModel\n"
         "class PermissionAssignModel(BusinessModel):\n"
         "    table_name = 'permission_assign'\n",
         encoding="utf-8",
@@ -396,28 +422,28 @@ def test_check_project_detects_model_contract_details_and_wrong_directories(tmp_
     add_version("v1", root=tmp_path)
     table_path = tmp_path / "app" / "v1" / "model" / "table" / "user.py"
     table_path.write_text(
-        "from framework.model.model import Model\n"
+        "from lingshu.model.model import Model\n"
         "class UserModel(Model):\n"
         "    table_name = ''\n",
         encoding="utf-8",
     )
     mismatch_path = tmp_path / "app" / "v1" / "model" / "table" / "account.py"
     mismatch_path.write_text(
-        "from framework.model.model import Model\n"
+        "from lingshu.model.model import Model\n"
         "class AccountModel(Model):\n"
         "    table_name = 'user_account'\n",
         encoding="utf-8",
     )
     wrong_table_path = tmp_path / "app" / "v1" / "model" / "table" / "workflow.py"
     wrong_table_path.write_text(
-        "from framework.model.business import BusinessModel\n"
+        "from lingshu.model.business import BusinessModel\n"
         "class WorkflowBusinessModel(BusinessModel):\n"
         "    pass\n",
         encoding="utf-8",
     )
     wrong_business_path = tmp_path / "app" / "v1" / "model" / "business" / "user.py"
     wrong_business_path.write_text(
-        "from framework.model.model import Model\n"
+        "from lingshu.model.model import Model\n"
         "class UserModel(Model):\n"
         "    table_name = 'user'\n",
         encoding="utf-8",
@@ -438,7 +464,7 @@ def test_check_project_detects_hard_coded_errors_in_business_code(tmp_path):
     controller.write_text(_resource_controller(), encoding="utf-8")
     business = tmp_path / "app" / "v1" / "model" / "business" / "permission_assign.py"
     business.write_text(
-        "from framework.model.business import BusinessModel\n"
+        "from lingshu.model.business import BusinessModel\n"
         "class PermissionAssignBusinessModel(BusinessModel):\n"
         "    async def assign(self):\n"
         "        self.logger.info('normal log text')\n"
@@ -449,7 +475,7 @@ def test_check_project_detects_hard_coded_errors_in_business_code(tmp_path):
     )
     table = tmp_path / "app" / "v1" / "model" / "table" / "user.py"
     table.write_text(
-        "from framework.model.model import Model\n"
+        "from lingshu.model.model import Model\n"
         "class UserModel(Model):\n"
         "    table_name = 'user'\n"
         "    async def fail(self):\n"
@@ -474,7 +500,7 @@ def test_check_project_detects_legacy_error_keywords_in_all_app_calls(tmp_path):
     legacy_message = "err" + "msg"
     files = {
         "app/controller/health.py": (
-            "from framework.response import json_response\n"
+            "from lingshu.response import json_response\n"
             "async def health(request):\n"
             f"    return json_response({legacy_code}=1)\n"
         ),
@@ -483,13 +509,13 @@ def test_check_project_detects_legacy_error_keywords_in_all_app_calls(tmp_path):
             f"    return json_response({legacy_message}='bad')\n"
         ),
         "app/v1/model/business/permission_assign.py": (
-            "from framework.model.business import BusinessModel\n"
+            "from lingshu.model.business import BusinessModel\n"
             "class PermissionAssignBusinessModel(BusinessModel):\n"
             "    async def fail(self):\n"
             f"        return json_response({legacy_code}=1)\n"
         ),
         "app/v1/model/table/user.py": (
-            "from framework.model.model import Model\n"
+            "from lingshu.model.model import Model\n"
             "class UserModel(Model):\n"
             "    table_name = 'user'\n"
             "    async def fail(self):\n"

@@ -1,7 +1,7 @@
 import pytest
 
-from framework.app import create_app
-from framework.extensions.registry import is_database_enabled, require_database
+from lingshu.app import create_app
+from lingshu.extensions.registry import is_database_enabled, require_database
 
 
 def test_no_database_enabled_by_default():

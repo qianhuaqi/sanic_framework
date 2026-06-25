@@ -1,14 +1,23 @@
 from pathlib import Path
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
-from framework.app import create_app
-from framework.error_codes import build_error_code_index, parse_error_code_catalog
-from framework.exception import get_error_message, language_roots, version_from_path
+from lingshu.app import create_app
+from lingshu.error_codes import build_error_code_index, parse_error_code_catalog
+from lingshu.exception import get_error_message, language_roots, version_from_path
+from lingshu.system import sanic_adapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _request(path="/v1/demo", language="zh-CN"):
+    request = SimpleNamespace(path=path)
+    request.app = SimpleNamespace(ctx=SimpleNamespace())
+    sanic_adapter.set_app_config(request.app, SimpleNamespace(language=language))
+    return request
 
 
 def test_error_code_catalog_loads_canonical_locales_from_app_language():
@@ -26,8 +35,8 @@ def test_error_code_catalog_loads_canonical_locales_from_app_language():
 def test_error_code_catalog_rejects_duplicate_codes(tmp_path):
     zh_dir = tmp_path / "zh-CN" / "ERROR"
     zh_dir.mkdir(parents=True)
-    (zh_dir / "system.ini").write_text("[System]\n990000 = 系统错误\n", encoding="utf-8")
-    (zh_dir / "auth.ini").write_text("[Auth]\n990000 = 签名错误\n", encoding="utf-8")
+    (zh_dir / "system.ini").write_text("[System]\n990000 = system duplicate\n", encoding="utf-8")
+    (zh_dir / "auth.ini").write_text("[Auth]\n990000 = auth duplicate\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="Duplicate error code '990000'"):
         parse_error_code_catalog(tmp_path)
@@ -44,8 +53,8 @@ def test_error_code_catalog_uses_version_language_before_app_language(tmp_path):
     version_zh_dir.mkdir(parents=True)
     project_zh_dir.mkdir(parents=True)
     project_en_dir.mkdir(parents=True)
-    (version_zh_dir / "user.ini").write_text("[User]\n110000 = 版本用户不存在\n", encoding="utf-8")
-    (project_zh_dir / "user.ini").write_text("[User]\n110000 = 项目用户不存在\n", encoding="utf-8")
+    (version_zh_dir / "user.ini").write_text("[User]\n110000 = version user missing\n", encoding="utf-8")
+    (project_zh_dir / "user.ini").write_text("[User]\n110000 = project user missing\n", encoding="utf-8")
     (project_en_dir / "user.ini").write_text("[User]\n110000 = User does not exist\n", encoding="utf-8")
 
     index = build_error_code_index(
@@ -54,7 +63,7 @@ def test_error_code_catalog_uses_version_language_before_app_language(tmp_path):
     )
 
     item = index["codes"][0]
-    assert item["messages"]["zh-CN"] == "版本用户不存在"
+    assert item["messages"]["zh-CN"] == "version user missing"
     assert item["messages"]["en-US"] == "User does not exist"
 
 
@@ -67,7 +76,7 @@ def test_language_roots_do_not_include_legacy_top_level_language(tmp_path, monke
 
     roots = [path.relative_to(tmp_path).as_posix() for path in language_roots("v1")]
 
-    assert roots == ["app/v1/language", "app/language", "framework/language"]
+    assert roots == ["app/v1/language", "app/language"]
 
 
 def test_version_from_path_supports_unified_version_names():
@@ -93,24 +102,7 @@ def test_get_error_message_uses_version_and_public_language_packages(tmp_path, m
     (admin_dir / "user.ini").write_text("[User]\n110000 = admin message\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    class Request:
-        pass
-
-    class App:
-        pass
-
-    class Ctx:
-        pass
-
-    class Config:
-        language = "zh-CN"
-
-    request = Request()
-    request.app = App()
-    request.app.ctx = Ctx()
-    request.app.ctx.config = Config()
-
-    request.path = "/v1/demo"
+    request = _request("/v1/demo")
     assert get_error_message(request, 110000) == "v1 message"
     request.path = "/v1_admin/demo"
     assert get_error_message(request, 110000) == "admin message"
@@ -119,24 +111,7 @@ def test_get_error_message_uses_version_and_public_language_packages(tmp_path, m
 
 
 def test_get_error_message_reads_language_package():
-    class Request:
-        path = "/v1/demo"
-
-    class App:
-        pass
-
-    class Ctx:
-        pass
-
-    class Config:
-        language = "zh-CN"
-
-    request = Request()
-    request.app = App()
-    request.app.ctx = Ctx()
-    request.app.ctx.config = Config()
-
-    assert get_error_message(request, 991111) == "请求参数不能为空"
+    assert get_error_message(_request("/v1/demo"), 991111) == "请求参数不能为空"
 
 
 def test_meta_error_codes_endpoint_is_available_in_testing():

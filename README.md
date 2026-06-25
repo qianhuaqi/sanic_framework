@@ -1,12 +1,12 @@
-# Sanic Framework
+# LingShu Framework / 灵枢框架
 
-Sanic Framework is a versioned MVC API framework template for Sanic. It keeps framework code stable in `framework/`, keeps business code in `app/`, and supports optional MySQL, Redis, and MongoDB integrations.
+LingShu Framework is a versioned MVC API framework template for Sanic. It keeps framework code in the `lingshu` Python package, keeps business code in `app/`, and supports optional MySQL, Redis, and MongoDB integrations.
 
 ## Quick Start
 
 ```powershell
-pip install sanic-framework
-sanic-framework init my_api --databases mysql,redis
+pip install lingshu-framework
+lingshu init my_api --databases mysql,redis
 cd my_api
 copy .env.example .env
 python run.py
@@ -15,10 +15,10 @@ python run.py
 Create a version and a RESTful module:
 
 ```powershell
-sanic-framework add v1
-sanic-framework make module v1 demo
-sanic-framework make model v1 user
-sanic-framework make business-model v1 permission_assign
+lingshu add v1
+lingshu make module v1 demo
+lingshu make model v1 user
+lingshu make business-model v1 permission_assign
 ```
 
 The generated module exposes:
@@ -52,7 +52,7 @@ app/                    Business application code
     language/           v1 language overrides
 config/
   defaults.py           Project defaults used before .env overrides
-framework/              Stable framework core; business projects should not edit it
+src/lingshu/          Stable framework core; business projects should not edit it
 public/
   docs/                 Public docs served from /docs
 tests/                  Framework and project verification
@@ -61,7 +61,7 @@ run.py                  Application entrypoint
 .env                    Local environment, never commit
 ```
 
-`framework/` is the reusable framework core. If a framework bug is found, fix and release the framework instead of patching generated business projects by hand.
+`src/lingshu/` is the reusable framework core. If a framework bug is found, fix and release the framework instead of patching generated business projects by hand.
 
 ## Configuration
 
@@ -118,9 +118,11 @@ LOG_BACKUP_COUNT=7
 Use the project logger in controllers, models, and services:
 
 ```python
-request.app.ctx.logger.debug("demo.index page=%s size=%s", page, size)
-request.app.ctx.logger.info("demo.create fields=%s", sorted(payload.keys()))
-request.app.ctx.logger.exception("demo.create failed")
+from lingshu import logger
+
+logger.debug("demo.index page=%s size=%s", page, size)
+logger.info("demo.create fields=%s", sorted(payload.keys()))
+logger.exception("demo.create failed")
 ```
 
 The generated demo controller shows normal usage:
@@ -131,12 +133,12 @@ The generated demo controller shows normal usage:
 
 ## MVC Development
 
-`sanic-framework init` renders only the shared project skeleton. It does not create `app/v1`, a demo module, or versioned MVC directories. Add each version explicitly:
+`lingshu init` renders only the shared project skeleton. It does not create `app/v1`, a demo module, or versioned MVC directories. Add each version explicitly:
 
 ```powershell
-sanic-framework add v1
-sanic-framework add v2
-sanic-framework add v1_admin
+lingshu add v1
+lingshu add v2
+lingshu add v1_admin
 ```
 
 Use `app/helper.py` for small project-level common functions:
@@ -161,18 +163,44 @@ app/v1/language/
 Physical table models live under `app/<version>/model/table/`. One physical table maps to one file, and underscores are part of the table name rather than a multi-table convention:
 
 ```powershell
-sanic-framework make model v1 a
-sanic-framework make model v1 a_b
-sanic-framework make model v1 a_b_c
+lingshu make model v1 a
+lingshu make model v1 a_b
+lingshu make model v1 a_b_c
 ```
 
 Business models live under `app/<version>/model/business/`. They inherit `BusinessModel`, end with the `BusinessModel` suffix, and do not declare `table_name`:
 
 ```powershell
-sanic-framework make business-model v1 permission_assign
+lingshu make business-model v1 permission_assign
 ```
 
 Keep controllers thin. Shared request checks, payload parsing, and language resolution belong in framework helpers; multi-table workflows belong in business models rather than being stitched together inside controllers.
+## Public Facade
+
+Business code should use the stable top-level facade:
+
+```python
+from lingshu import logger, config, app, request, db, language, abort
+
+logger.info("started")
+debug = config.debug
+raw_request = request.raw
+message = language.get(991111)
+abort(991111, status=400)
+```
+
+Direct Sanic context access such as `request.app.ctx.*` is reserved for LingShu internals under `lingshu.system`.
+
+## Breaking Migration
+
+Phase B is a hard migration:
+
+- `framework` became `lingshu`
+- `sanic-framework` became `lingshu`
+- `request.app.ctx.*` examples became the `lingshu` top-level facade
+- `Model(request)` became `Model()`
+- `BusinessModel(request)` became `BusinessModel()`
+- no compatibility `framework` package or dual CLI is provided
 
 ## Response Format
 
@@ -189,7 +217,7 @@ All API responses use:
 Raise business errors by code so messages come from the language package:
 
 ```python
-from framework.exception import raise_code
+from lingshu.exception import raise_code
 
 raise_code(request, 991111, status_code=400)
 ```
@@ -199,13 +227,13 @@ raise_code(request, 991111, status_code=400)
 Shared language resources live in `app/language`.
 
 Version-specific overrides live in `app/v1/language`, `app/v2/language`, and so on. Version resources have higher priority than shared resources.
-Framework fallback resources live in `framework/language` when present. The legacy top-level `language/` directory is not part of the formal lookup path.
+Framework fallback resources live in `lingshu/language` when present. The legacy top-level `language/` directory is not part of the formal lookup path.
 
 The formal lookup order is:
 
 1. `app/<version>/language`
 2. `app/language`
-3. `framework/language`
+3. `lingshu/language`
 
 Raise errors by code only. Business code and generated controllers should not pass hard-coded error-message keyword strings.
 
@@ -225,7 +253,7 @@ The module ranges are defined in `app/language/modules.ini`.
 Run the project contract checker before committing generated or business code:
 
 ```powershell
-sanic-framework check
+lingshu check
 ```
 
 The checker validates required project files, versioned controller handlers, shared `PUT`/`PATCH` update routing, forbidden `partial_update`, hard-coded error messages, table model contracts, and business model contracts. Errors include the file path and reason.

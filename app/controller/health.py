@@ -1,7 +1,7 @@
 from sanic import Blueprint
 
-from framework.response import json_response
-from framework.router import RoutePolicy, set_blueprint_policy
+from lingshu.response import json_response
+from lingshu.router import RoutePolicy, set_blueprint_policy
 
 
 bp = Blueprint("health")
