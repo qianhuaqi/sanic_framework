@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from contextvars import ContextVar
 
 from lingshu.system.errors import NoAppContextError, NoRequestContextError
@@ -10,6 +11,39 @@ current_app: ContextVar[object | None] = ContextVar("lingshu_current_app", defau
 current_request: ContextVar[object | None] = ContextVar("lingshu_current_request", default=None)
 current_request_id: ContextVar[str | None] = ContextVar("lingshu_current_request_id", default=None)
 current_user: ContextVar[object | None] = ContextVar("lingshu_current_user", default=None)
+
+
+@dataclass
+class _ContextTokens:
+    app_token: object | None = None
+    request_token: object | None = None
+    request_id_token: object | None = None
+    user_token: object | None = None
+    entered: bool = False
+    reset_done: bool = False
+
+    def enter(self, raw_app, raw_request, request_id=None, user=None):
+        if self.entered:
+            return raw_request
+        self.app_token = current_app.set(raw_app)
+        self.request_token = current_request.set(raw_request)
+        self.request_id_token = current_request_id.set(request_id)
+        self.user_token = current_user.set(user)
+        self.entered = True
+        return raw_request
+
+    def reset(self):
+        if not self.entered or self.reset_done:
+            return
+        if self.user_token is not None:
+            current_user.reset(self.user_token)
+        if self.request_id_token is not None:
+            current_request_id.reset(self.request_id_token)
+        if self.request_token is not None:
+            current_request.reset(self.request_token)
+        if self.app_token is not None:
+            current_app.reset(self.app_token)
+        self.reset_done = True
 
 
 def get_current_app():
@@ -43,15 +77,15 @@ async def async_app_context(raw_app):
 
 @contextmanager
 def request_context(raw_app, raw_request, request_id=None, user=None):
-    app_token = current_app.set(raw_app)
-    request_token = current_request.set(raw_request)
-    request_id_token = current_request_id.set(request_id)
-    user_token = current_user.set(user)
+    context = _ContextTokens()
     try:
+        context.enter(raw_app, raw_request, request_id=request_id, user=user)
         yield raw_request
     finally:
-        current_user.reset(user_token)
-        current_request_id.reset(request_id_token)
-        current_request.reset(request_token)
-        current_app.reset(app_token)
+        context.reset()
 
+
+def bind_request_context(raw_app, raw_request, request_id=None, user=None) -> _ContextTokens:
+    context = _ContextTokens()
+    context.enter(raw_app, raw_request, request_id=request_id, user=user)
+    return context

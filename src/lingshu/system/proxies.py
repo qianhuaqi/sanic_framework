@@ -1,17 +1,30 @@
 from __future__ import annotations
 
 import logging
+from types import MappingProxyType
 
 from lingshu.system.context import current_request_id, current_user, get_current_app, get_current_request
-from lingshu.system.errors import ResourceNotConfiguredError
+from lingshu.system.errors import NoAppContextError, NoRequestContextError, ResourceNotConfiguredError
 from lingshu.system.sanic_adapter import get_app_config, get_app_logger, get_optional_resource, get_resource
+
+
+def _freeze_value(value):
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_value(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze_value(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze_value(item) for item in value)
+    return value
 
 
 class LoggerProxy:
     def _logger(self):
         try:
             return get_app_logger(get_current_app())
-        except Exception:
+        except NoAppContextError:
             return logging.getLogger("lingshu")
 
     def __getattr__(self, name):
@@ -23,10 +36,10 @@ class ConfigProxy:
         return get_app_config(get_current_app())
 
     def __getattr__(self, name):
-        return getattr(self._config(), name)
+        return _freeze_value(getattr(self._config(), name))
 
     def __getitem__(self, key):
-        return getattr(self._config(), str(key).lower())
+        return _freeze_value(getattr(self._config(), str(key).lower()))
 
     def __setattr__(self, name, value):
         if name.startswith("_"):
@@ -47,7 +60,11 @@ class RequestProxy:
 
     @property
     def id(self):
-        return current_request_id.get() or ""
+        get_current_request()
+        request_id = current_request_id.get()
+        if request_id is None:
+            raise NoRequestContextError("No LingShu request context is active")
+        return request_id
 
     @property
     def method(self):
@@ -72,7 +89,9 @@ class RequestProxy:
     @property
     def user(self):
         ctx = getattr(self.raw, "ctx", None)
-        return getattr(ctx, "g", None) or current_user.get()
+        if ctx is not None and hasattr(ctx, "g"):
+            return getattr(ctx, "g")
+        return current_user.get()
 
 
 class DatabaseProxy:

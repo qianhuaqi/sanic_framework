@@ -55,6 +55,8 @@ class ModuleRange:
     range_expr: str
     start: int
     end: int
+    source: str = ""
+    reserved: bool = False
 
     def contains(self, code: int) -> bool:
         return self.start <= code <= self.end
@@ -110,7 +112,11 @@ def _parse_module_range(expr: str) -> tuple[int, int]:
     return start, end
 
 
-def parse_module_ranges(module_map_path: str | Path) -> list[ModuleRange]:
+def _is_internal_module_map(path: Path) -> bool:
+    return path.as_posix().endswith("/src/lingshu/resources/error_codes/modules.ini") or path.as_posix().endswith("\\src\\lingshu\\resources\\error_codes\\modules.ini")
+
+
+def parse_module_ranges(module_map_path: str | Path, *, reserved: bool = False) -> list[ModuleRange]:
     path = Path(module_map_path)
     if not path.exists():
         raise FileNotFoundError(f"Module map not found: {path}")
@@ -130,6 +136,8 @@ def parse_module_ranges(module_map_path: str | Path) -> list[ModuleRange]:
                 range_expr=range_expr.strip(),
                 start=start,
                 end=end,
+                source=str(path),
+                reserved=reserved,
             )
         )
 
@@ -145,6 +153,40 @@ def parse_module_ranges(module_map_path: str | Path) -> list[ModuleRange]:
     return ranges
 
 
+def parse_module_ranges_from_paths(module_map_paths: str | Path | Iterable[str | Path]) -> list[ModuleRange]:
+    if isinstance(module_map_paths, (str, Path)):
+        paths = [Path(module_map_paths)]
+    else:
+        paths = [Path(path) for path in module_map_paths]
+    ranges: list[ModuleRange] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        ranges.extend(parse_module_ranges(path, reserved=_is_internal_module_map(path)))
+    ranges.sort(key=lambda item: (item.start, item.end, item.module))
+    for index in range(1, len(ranges)):
+        previous = ranges[index - 1]
+        current = ranges[index]
+        if current.start <= previous.end:
+            raise ValueError(
+                f"Overlapping module ranges: {previous.range_expr} ({previous.module}) from {previous.source} and "
+                f"{current.range_expr} ({current.module}) from {current.source}"
+            )
+    seen_modules: dict[str, ModuleRange] = {}
+    for module_range in ranges:
+        existing = seen_modules.get(module_range.module)
+        if existing is not None and (
+            existing.range_expr != module_range.range_expr
+            or existing.source != module_range.source
+            or existing.reserved != module_range.reserved
+        ):
+            raise ValueError(
+                f"Duplicate module '{module_range.module}' configured in {existing.source} and {module_range.source}"
+            )
+        seen_modules[module_range.module] = module_range
+    return ranges
+
+
 def _resolve_module_range(code: int, module_ranges: list[ModuleRange]) -> ModuleRange:
     for module_range in module_ranges:
         if module_range.contains(code):
@@ -154,15 +196,15 @@ def _resolve_module_range(code: int, module_ranges: list[ModuleRange]) -> Module
 
 def parse_error_code_catalog(
     locale_root: str | Path | Iterable[str | Path],
-    module_map_path: str | Path | None = None,
+    module_map_path: str | Path | Iterable[str | Path] | None = None,
 ) -> list[ErrorCodeRecord]:
     roots = [root for root in _normalize_locale_roots(locale_root) if root.exists()]
     if not roots:
         return []
 
     if module_map_path is None:
-        module_map_path = Path(__file__).with_name("modules.ini")
-    module_ranges = parse_module_ranges(module_map_path)
+        module_map_path = [Path(__file__).with_name("resources") / "error_codes" / "modules.ini"]
+    module_ranges = parse_module_ranges_from_paths(module_map_path)
 
     records: dict[str, ErrorCodeRecord] = {}
     seen_sources: dict[tuple[str, str], tuple[int, str]] = {}
@@ -225,34 +267,42 @@ def _cache_key_for_roots(locale_root: str | Path | Iterable[str | Path]) -> tupl
 @lru_cache(maxsize=64)
 def _parse_error_code_catalog_cached(
     roots: tuple[str, ...],
-    module_map_path: str | None,
+    module_map_path: tuple[str, ...] | None,
 ) -> tuple[ErrorCodeRecord, ...]:
-    return tuple(parse_error_code_catalog([Path(root) for root in roots], module_map_path=module_map_path))
+    module_map_arg = [Path(path) for path in module_map_path] if module_map_path is not None else None
+    return tuple(parse_error_code_catalog([Path(root) for root in roots], module_map_path=module_map_arg))
 
 
 def parse_error_code_catalog_cached(
     locale_root: str | Path | Iterable[str | Path],
-    module_map_path: str | Path | None = None,
+    module_map_path: str | Path | Iterable[str | Path] | None = None,
 ) -> list[ErrorCodeRecord]:
     roots = _cache_key_for_roots(locale_root)
-    module_map = str(Path(module_map_path).resolve()) if module_map_path is not None else None
+    if module_map_path is None:
+        module_map = None
+    elif isinstance(module_map_path, (str, Path)):
+        module_map = (str(Path(module_map_path).resolve()),)
+    else:
+        module_map = tuple(str(Path(path).resolve()) for path in module_map_path)
     return list(_parse_error_code_catalog_cached(roots, module_map))
 
 
 def build_error_code_index(
     locale_root: str | Path | Iterable[str | Path],
-    module_map_path: str | Path | None = None,
+    module_map_path: str | Path | Iterable[str | Path] | None = None,
 ) -> dict[str, object]:
     records = parse_error_code_catalog_cached(locale_root, module_map_path=module_map_path)
     if module_map_path is None:
-        module_map_path = Path(__file__).with_name("modules.ini")
-    module_ranges = parse_module_ranges(module_map_path)
+        module_map_path = [Path(__file__).with_name("resources") / "error_codes" / "modules.ini"]
+    module_ranges = parse_module_ranges_from_paths(module_map_path)
     module_buckets = {
         module_range.module: {
             "module": module_range.module,
             "range": module_range.range_expr,
             "total": 0,
             "items": [],
+            "reserved": module_range.reserved,
+            "source": module_range.source,
         }
         for module_range in module_ranges
     }
@@ -264,6 +314,8 @@ def build_error_code_index(
                 "range": record.module_range,
                 "total": 0,
                 "items": [],
+                "reserved": False,
+                "source": "",
             },
         )
         bucket["items"].append(record.to_dict())
@@ -281,7 +333,7 @@ def resolve_error_message(
     code: int | str,
     locale_root: str | Path | Iterable[str | Path],
     locale: str = "zh-CN",
-    module_map_path: str | Path | None = None,
+    module_map_path: str | Path | Iterable[str | Path] | None = None,
     default: str | None = None,
 ) -> str:
     normalized_code = str(code).strip()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lingshu.system.context import request_context
+from lingshu.system.context import bind_request_context
 from lingshu.system.errors import ResourceNotConfiguredError
 
 
@@ -58,18 +58,39 @@ def get_request_user(raw_request):
 
 def get_request_id(raw_request):
     ctx = getattr(raw_request, "ctx", None)
-    return getattr(ctx, "request_id", None) or raw_request.headers.get("X-Request-ID", "")
+    request_id = getattr(ctx, "request_id", None)
+    if request_id:
+        return request_id
+    headers = getattr(raw_request, "headers", {}) or {}
+    return headers.get("X-Request-ID") or headers.get("x-request-id")
+
+
+def get_request_context(raw_request):
+    ctx = getattr(raw_request, "ctx", None)
+    return getattr(ctx, "lingshu_context", None)
+
+
+def reset_request_context(raw_request):
+    context = get_request_context(raw_request)
+    if context is None:
+        return
+    context.reset()
+    ctx = getattr(raw_request, "ctx", None)
+    if ctx is not None:
+        setattr(ctx, "lingshu_context", None)
 
 
 def install_context_middleware(raw_app):
     @raw_app.middleware("request")
     async def bind_lingshu_context(request):
-        request.ctx.lingshu_context = request_context(raw_app, request, request_id=get_request_id(request), user=get_request_user(request))
-        request.ctx.lingshu_context.__enter__()
+        context = bind_request_context(
+            raw_app,
+            request,
+            request_id=get_request_id(request),
+            user=get_request_user(request),
+        )
+        request.ctx.lingshu_context = context
 
     @raw_app.middleware("response")
     async def reset_lingshu_context(request, response):
-        context = getattr(request.ctx, "lingshu_context", None)
-        if context is not None:
-            context.__exit__(None, None, None)
-            request.ctx.lingshu_context = None
+        reset_request_context(request)

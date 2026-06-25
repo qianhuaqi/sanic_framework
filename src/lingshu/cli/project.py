@@ -119,9 +119,8 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
         "from lingshu.app import create_app\n\n\n"
         "app = create_app()\n\n\n"
         "if __name__ == \"__main__\":\n"
-        "    from lingshu.system import sanic_adapter\n"
-        "    config = sanic_adapter.get_app_config(app)\n"
-        "    app.run(host=config.host, port=config.port, debug=config.debug, workers=config.workers)\n",
+        "    from lingshu.runtime import run_app\n\n"
+        "    run_app(app)\n",
     )
     _write_if_missing(
         target_dir / "app" / "bootstrap.py",
@@ -189,12 +188,7 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
     _write_if_missing(
         target_dir / "app" / "language" / "modules.ini",
         "[Modules]\n"
-        "100000-109999 = language\n"
-        "110000-119999 = user\n"
-        "990000-990099 = system\n"
-        "990100-990199 = auth\n"
-        "990200-990299 = db\n"
-        "991100-991199 = param\n",
+        "110000-119999 = user\n",
     )
 
 
@@ -518,8 +512,13 @@ def _check_business_models(root: Path) -> list[str]:
 
 def _check_business_code_errors(root: Path) -> list[str]:
     issues: list[str] = []
+    files = []
+    for path in root.glob("*.py"):
+        if path.name != "__init__.py":
+            files.append(path)
     app_root = root / "app"
-    files = [path for path in app_root.rglob("*.py") if path.name != "__init__.py"] if app_root.exists() else []
+    if app_root.exists():
+        files.extend(path for path in app_root.rglob("*.py") if path.name != "__init__.py")
     seen: set[Path] = set()
     for path in files:
         if path in seen:
