@@ -4,7 +4,7 @@
 import time
 from functools import wraps
 
-from framework.helper import Error
+from framework.exception import APIException, get_error_message
 from framework.middleware.params import I
 from framework.middleware.utils import md5
 
@@ -22,7 +22,7 @@ async def check_expire(request, timestamp):
     # 验证时间戳是否过期(5分钟)
     now = int(time.time())
     if (now - int(timestamp)) > 5 * 60:
-        raise Error(request, 'Open', 90402)
+        raise APIException(code=90402, msg=get_error_message(request, 90402), status_code=400)
     return True
 
 
@@ -44,7 +44,7 @@ async def check_sign(request, sign, key):
     request.app.ctx.logger.info('param_sign：{}'.format(sign))
     request.app.ctx.logger.info('local_sign：{}'.format(local_sign))
     if local_sign != sign:
-        raise Error(request, 'Open', 90401)
+        raise APIException(code=90401, msg=get_error_message(request, 90401), status_code=400)
     return True
 
 

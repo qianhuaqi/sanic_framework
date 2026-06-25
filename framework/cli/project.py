@@ -41,7 +41,9 @@ VERSION_DIRECTORIES = (
     "view",
     "language",
 )
-ERROR_CALLS = {"raise_code", "APIException", "Error"}
+ERROR_CALLS = {"raise_code", "APIException"}
+LEGACY_ERROR_KEYWORDS = {"err" + "code", "err" + "msg"}
+ERROR_MESSAGE_KEYWORDS = {"default", "msg"}
 BUSINESS_CRUD_METHODS = {"get_one", "find", "get_all", "find_all", "get_count", "get_pagination", "insert", "update", "delete"}
 
 
@@ -308,9 +310,18 @@ def _has_hard_coded_error_message(function_node: ast.AST) -> bool:
         if _call_name(node) not in ERROR_CALLS:
             continue
         for keyword in node.keywords:
-            if keyword.arg in {"default", "msg", "errmsg"} and isinstance(keyword.value, ast.Constant):
+            if keyword.arg in ERROR_MESSAGE_KEYWORDS and isinstance(keyword.value, ast.Constant):
                 if isinstance(keyword.value.value, str) and keyword.value.value:
                     return True
+    return False
+
+
+def _has_legacy_error_keyword(function_node: ast.AST) -> bool:
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Call):
+            continue
+        if any(keyword.arg in LEGACY_ERROR_KEYWORDS for keyword in node.keywords):
+            return True
     return False
 
 
@@ -463,16 +474,8 @@ def _check_business_models(root: Path) -> list[str]:
 
 def _check_business_code_errors(root: Path) -> list[str]:
     issues: list[str] = []
-    files: list[Path] = []
-    for version_path in _version_paths(root):
-        for relative in ("controller", "model/table", "model/business"):
-            directory = version_path / relative
-            if directory.exists():
-                files.extend(path for path in directory.glob("*.py") if path.name != "__init__.py")
-    for relative in ("app/helper.py", "app/event.py"):
-        path = root / relative
-        if path.exists():
-            files.append(path)
+    app_root = root / "app"
+    files = [path for path in app_root.rglob("*.py") if path.name != "__init__.py"] if app_root.exists() else []
     seen: set[Path] = set()
     for path in files:
         if path in seen:
@@ -482,6 +485,8 @@ def _check_business_code_errors(root: Path) -> list[str]:
         issues.extend(parse_issues)
         if module is None:
             continue
+        if _has_legacy_error_keyword(module):
+            issues.append(f"{_relative(root, path)}: legacy error keyword is forbidden")
         if _has_hard_coded_error_message(module):
             issues.append(f"{_relative(root, path)}: hard coded error messages are forbidden")
     return issues

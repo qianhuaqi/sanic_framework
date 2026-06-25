@@ -4,7 +4,7 @@
 
 import re
 from sanic.request import Request
-from framework.middleware.api_exception import APIException
+from framework.exception import APIException
 
 
 class Params:
@@ -33,7 +33,7 @@ def params_exists(request: Request, params, name, msg=None):
         i18n = request.app.ctx.i18n
         code = 991109 if msg else 991103
         msg = msg if msg else i18n['Param'].get(str(code))
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
     return True
 
 
@@ -51,7 +51,7 @@ def params_convert(request: Request, param, t):
         i18n = request.app.ctx.i18n
         code = 991102
         msg = i18n['Param'].get(str(code))
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
     return param
 
 
@@ -69,26 +69,26 @@ def over_limit(request: Request, param_name, param, min_length=-1, max_length=10
     if max_length == -1:
         code = 991108
         msg = i18n['Param'].get(str(code)).format(param_name, min_length)
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
     elif min_length == -1:
         code = 991107
         msg = i18n['Param'].get(str(code)).format(param_name, max_length)
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
     elif min_length == max_length:
         code = 991106
         msg = i18n['Param'].get(str(code)).format(param_name, max_length)
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
     else:
         code = 991105
         msg = i18n['Param'].get(str(code)).format(param_name, min_length, max_length)
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
 
 def regex_validate(request: Request, param, pattern):
     if not re.match(pattern, param):
         i18n = request.app.ctx.i18n
         code = 991102
         msg = i18n['Param'].get(str(code))
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
 
 
 def I(request: Request, **kwargs):

@@ -207,7 +207,7 @@ The formal lookup order is:
 2. `app/language`
 3. `framework/language`
 
-Raise errors by code only. Business code and generated controllers should not pass hard-coded `default`, `msg`, or `errmsg` strings.
+Raise errors by code only. Business code and generated controllers should not pass hard-coded error-message keyword strings.
 
 Inspect error codes during development:
 

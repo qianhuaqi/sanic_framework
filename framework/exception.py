@@ -68,19 +68,11 @@ class APIException(Exception):
         status_code=500,
         data=None,
         request=None,
-        errcode=None,
-        errmsg=None,
     ):
-        if errcode is not None:
-            code = errcode
-        if errmsg is not None:
-            msg = errmsg
         if msg is None:
             msg = get_error_message(request, code)
         super().__init__(msg)
         self.code = code
         self.msg = msg
-        self.errcode = code
-        self.errmsg = msg
         self.status_code = status_code
-        self.data = data or {}
+        self.data = {} if data is None else data

@@ -7,8 +7,7 @@ from functools import wraps
 import jwt
 from sanic import Request
 
-from framework.helper import get_error
-from framework.middleware.api_exception import APIException
+from framework.exception import raise_code
 from framework.middleware.crypt_des import encrypt_data, decrypt_data
 from framework.middleware.utils import md5_upper, get_client_ip
 
@@ -50,8 +49,11 @@ class Auth:
                     pass
                 else:
                     data["user"] = int(decrypt_user)
-        except Exception as e:
-            raise APIException(errcode=990100, errmsg=str(e), status_code=401)
+        except Exception:
+            logger = getattr(getattr(self.request.app, "ctx", None), "logger", None)
+            if logger is not None:
+                logger.exception("JWT decode failed")
+            raise_code(self.request, 990100, status_code=401)
         else:
             if data.get('grant_type', ''):
                 return None
@@ -74,9 +76,12 @@ class Auth:
                     pass
                 else:
                     data["user"] = int(decrypt_user)
-        except Exception as e:
+        except Exception:
             # 如果 jwt 被篡改过；或者算法不正确；如果设置有效时间，过了有效期；或者密钥不相同；都会抛出相应的异常
-            raise APIException(errcode=990100, errmsg=str(e), status_code=401)
+            logger = getattr(getattr(self.request.app, "ctx", None), "logger", None)
+            if logger is not None:
+                logger.exception("JWT refresh decode failed")
+            raise_code(self.request, 990100, status_code=401)
         else:
             if data.get('grant_type', '') != 'refresh':
                 return None
@@ -126,11 +131,11 @@ class Auth:
     async def check_token(self):
         auth_header_value = self.request.headers.get('Authorization', '')
         if not auth_header_value:
-            get_error(self.request, error_type='Auth', errcode=990101, status_code=401)
+            raise_code(self.request, 990101, status_code=401)
 
         parts = auth_header_value.split()
         if parts[0].lower() != "bearer" or len(parts) != 2:
-            get_error(self.request, error_type='Auth', errcode=990102, status_code=401)
+            raise_code(self.request, 990102, status_code=401)
 
         token = parts[1]
         payload = await self.decode_jwt(token)
@@ -140,7 +145,7 @@ class Auth:
         white_ip_list = getattr(self.request.app.ctx.config, "auth_white_ip_list", [])
         if token_sole and request_sole not in white_ip_list:
             if token_sole != request_sole:
-                get_error(self.request, error_type='Auth', errcode=990103, status_code=401)
+                raise_code(self.request, 990103, status_code=401)
         return payload
 
 

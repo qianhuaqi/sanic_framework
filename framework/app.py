@@ -3,9 +3,10 @@ import os
 from pathlib import Path
 
 from sanic import Sanic
+from sanic.exceptions import SanicException
 
 from framework.config import load_config
-from framework.exception import APIException
+from framework.exception import APIException, get_error_message
 from framework.lifecycle import register_lifecycle
 from framework.logging import setup_logging
 from framework.middleware_registry import register_middleware
@@ -62,6 +63,21 @@ def create_app():
             code=exception.code,
             msg=exception.msg,
             status=exception.status_code,
+        )
+
+    @app.exception(Exception)
+    async def handle_unknown_exception(request, exception):
+        if isinstance(exception, SanicException):
+            status_code = getattr(exception, "status_code", 500)
+            if status_code < 500:
+                return json_response(code=status_code, msg=str(exception), status=status_code)
+        logger = getattr(app.ctx, "logger", None)
+        if logger is not None:
+            logger.error("Unhandled exception", exc_info=(type(exception), exception, exception.__traceback__))
+        return json_response(
+            code=990000,
+            msg=get_error_message(request, 990000),
+            status=500,
         )
 
     return app

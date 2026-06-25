@@ -9,7 +9,7 @@ from Crypto.Cipher import DES
 from Crypto.Util.Padding import pad, unpad
 from sanic.request import Request
 
-from framework.middleware.api_exception import APIException
+from framework.exception import APIException
 # 处理前后端交互加解密
 
 # 加密
@@ -40,7 +40,7 @@ def decrypt_data(request: Request, encrypt_text, key=None):
         i18n = request.app.ctx.i18n
         code = 991102
         msg = i18n['Param'].get(str(code))
-        raise APIException(errcode=code, errmsg=msg, status_code=400)
+        raise APIException(code=code, msg=msg, status_code=400)
     iv = encrypted_data[:DES.block_size]
     encrypted_data = encrypted_data[DES.block_size:]
     cipher = DES.new(key, DES.MODE_CBC, iv)

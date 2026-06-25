@@ -6,7 +6,7 @@ import json
 
 from sanic.request import Request
 
-from framework.middleware.api_exception import APIException
+from framework.exception import APIException
 from framework.middleware.crypt_des import decrypt_data
 from framework.middleware.params import params_convert, params_filter, params_exists, over_limit, regex_validate, I
 
@@ -39,11 +39,11 @@ class CryptParams:
 
                 # 将解密后的参数存储到 request.ctx 中
                 self.request.ctx.crypt_params_dict = self.params_dict
-            except Exception as e:
+            except Exception:
                 i18n = self.request.app.ctx.i18n
                 code = 991104
                 msg = i18n['Param'].get(str(code))
-                raise APIException(errcode=code, errmsg=msg, status_code=400)
+                raise APIException(code=code, msg=msg, status_code=400)
 
     def get_param(self, **kwargs):
         """

@@ -12,12 +12,9 @@ from sanic.response import json
 from framework.middleware.crypt_des import encrypt_data
 
 
-def json_response(request: Request, data=None, code=0, msg="ok", errcode=None, errmsg=None, **kwargs):
-    if errcode is not None:
-        code = errcode
-    if errmsg is not None:
-        msg = errmsg
-    if data:
+def json_response(request: Request, data=None, code=0, msg="ok", **kwargs):
+    # Encryption adapter for legacy encrypted responses; the protocol remains code/msg/data.
+    if data is not None:
         allow_encryption = True if str(request.app.config.CRYPT.get('enabled', False)).lower() == 'true' else False
         if allow_encryption:
             # 加密数据

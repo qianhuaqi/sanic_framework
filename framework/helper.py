@@ -3,16 +3,7 @@
 import json
 import os
 
-from framework.exception import APIException, get_error_message
 from framework.middleware.json import CustomJSONEncoder
-
-
-def get_error(request, error_type, errcode, status_code=200):
-    raise APIException(code=errcode, msg=get_error_message(request, errcode), status_code=status_code)
-
-
-def Error(request, error_type, errcode, data=None, status_code=200):
-    return APIException(code=errcode, msg=get_error_message(request, errcode), data=data, status_code=status_code)
 
 
 def exists_path(path):
