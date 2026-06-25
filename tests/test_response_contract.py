@@ -1,8 +1,11 @@
 import importlib
+import asyncio
 import json
 
 import pytest
+from sanic import Blueprint
 
+from framework.app import create_app
 from framework.exception import APIException
 from framework.response import json_response
 
@@ -61,3 +64,57 @@ def test_api_exception_rejects_legacy_keyword_arguments():
 def test_legacy_middleware_api_exception_module_is_removed():
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("framework.middleware.api_exception")
+
+
+def test_api_exception_response_uses_code_msg_data_shape():
+    app = create_app()
+    bp = Blueprint("response_contract_api_exception")
+
+    @bp.get("/contract/api-error")
+    async def api_error(request):
+        raise APIException(code=991111, msg="payload required", status_code=400, data=False)
+
+    app.blueprint(bp)
+
+    async def scenario():
+        return await app.asgi_client.get("/contract/api-error")
+
+    _, response = asyncio.run(scenario())
+
+    assert response.status == 400
+    assert response.json == {"code": 991111, "msg": "payload required", "data": False}
+
+
+def test_404_does_not_return_system_error_message():
+    app = create_app()
+
+    async def scenario():
+        return await app.asgi_client.get("/missing-response-contract-route")
+
+    _, response = asyncio.run(scenario())
+
+    assert response.status == 404
+    assert response.json is None or response.json.get("code") != 990000
+    if response.json:
+        assert response.json.get("msg") != "System error"
+
+
+def test_unknown_exception_returns_safe_500_response():
+    app = create_app()
+    bp = Blueprint("response_contract_unknown_exception")
+
+    @bp.get("/contract/boom")
+    async def boom(request):
+        raise RuntimeError("secret boom text")
+
+    app.blueprint(bp)
+
+    async def scenario():
+        return await app.asgi_client.get("/contract/boom")
+
+    _, response = asyncio.run(scenario())
+
+    assert response.status == 500
+    assert response.json["code"] == 990000
+    assert "secret boom text" not in response.json["msg"]
+    assert set(response.json) == {"code", "msg", "data"}

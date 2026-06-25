@@ -463,5 +463,69 @@ def test_check_project_detects_hard_coded_errors_in_business_code(tmp_path):
 
     assert any("app/v1/model/business/permission_assign.py" in issue and "hard coded" in issue for issue in issues)
     assert any("app/v1/model/table/user.py" in issue and "hard coded" in issue for issue in issues)
-    assert any("app/helper.py" in issue and "hard coded" in issue for issue in issues)
+    assert any("app/helper.py" in issue and "legacy error keyword" in issue for issue in issues)
     assert not any("normal log text" in issue or "normal return data" in issue for issue in issues)
+
+
+def test_check_project_detects_legacy_error_keywords_in_all_app_calls(tmp_path):
+    _render_project(tmp_path)
+    add_version("v1", root=tmp_path)
+    legacy_code = "err" + "code"
+    legacy_message = "err" + "msg"
+    files = {
+        "app/controller/health.py": (
+            "from framework.response import json_response\n"
+            "async def health(request):\n"
+            f"    return json_response({legacy_code}=1)\n"
+        ),
+        "app/v1/controller/demo.py": _resource_controller(
+            "async def _bad(request):\n"
+            f"    return json_response({legacy_message}='bad')\n"
+        ),
+        "app/v1/model/business/permission_assign.py": (
+            "from framework.model.business import BusinessModel\n"
+            "class PermissionAssignBusinessModel(BusinessModel):\n"
+            "    async def fail(self):\n"
+            f"        return json_response({legacy_code}=1)\n"
+        ),
+        "app/v1/model/table/user.py": (
+            "from framework.model.model import Model\n"
+            "class UserModel(Model):\n"
+            "    table_name = 'user'\n"
+            "    async def fail(self):\n"
+            f"        return json_response({legacy_message}='bad')\n"
+        ),
+        "app/helper.py": (
+            "def fail():\n"
+            f"    return json_response({legacy_code}=1)\n"
+        ),
+        "app/event.py": (
+            "def fail():\n"
+            f"    return json_response({legacy_message}='bad')\n"
+        ),
+    }
+    for relative, source in files.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    issues = check_project(tmp_path)
+
+    for relative in files:
+        assert any(relative in issue and "legacy error keyword" in issue for issue in issues), relative
+
+
+def test_check_project_does_not_flag_plain_legacy_named_variables(tmp_path):
+    _render_project(tmp_path)
+    path = tmp_path / "app" / "future.py"
+    path.write_text(
+        "def describe():\n"
+        "    errcode = 'sample only'\n"
+        "    errmsg = 'sample only'\n"
+        "    return {'errcode': errcode, 'errmsg': errmsg}\n",
+        encoding="utf-8",
+    )
+
+    issues = check_project(tmp_path)
+
+    assert not any("app/future.py" in issue for issue in issues)

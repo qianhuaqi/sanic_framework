@@ -70,7 +70,7 @@ def create_app():
         if isinstance(exception, SanicException):
             status_code = getattr(exception, "status_code", 500)
             if status_code < 500:
-                return json_response(code=status_code, msg=get_error_message(request, 990000), status=status_code)
+                return json_response(code=status_code, msg=str(exception), status=status_code)
         logger = getattr(app.ctx, "logger", None)
         if logger is not None:
             logger.error("Unhandled exception", exc_info=(type(exception), exception, exception.__traceback__))
