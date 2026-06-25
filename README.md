@@ -17,6 +17,8 @@ Create a version and a RESTful module:
 ```powershell
 sanic-framework add v1
 sanic-framework make module v1 demo
+sanic-framework make model v1 user
+sanic-framework make business-model v1 permission_assign
 ```
 
 The generated module exposes:
@@ -25,9 +27,11 @@ The generated module exposes:
 - `GET /v1/demo/<id>`
 - `POST /v1/demo`
 - `PUT /v1/demo/<id>`
+- `PATCH /v1/demo/<id>`
 - `DELETE /v1/demo/<id>`
 
 Generated controllers keep only five methods: `index`, `info`, `create`, `update`, and `delete`.
+`PUT` and `PATCH` share the same `update` handler; generated code never creates `partial_update`.
 
 ## Directory Guide
 
@@ -35,13 +39,15 @@ Generated controllers keep only five methods: `index`, `info`, `create`, `update
 app/                    Business application code
   bootstrap.py          Project extension and blueprint bootstrap
   route.py              Project route registration
-  common.py             Project-level common functions
+  helper.py             Project-level common functions
+  common.py             Project-level constants, enums, and static definitions
   event.py              Project event definitions
   controller/           Project-level controllers, such as health and meta
   language/             Shared language package and error-code catalog
   v1/                   Versioned MVC app
     controller/         v1 API controllers
-    model/              v1 models
+    model/table/        v1 physical table models
+    model/business/     v1 multi-table business models
     view/               v1 views or lightweight API pages
     language/           v1 language overrides
 config/
@@ -125,7 +131,15 @@ The generated demo controller shows normal usage:
 
 ## MVC Development
 
-Use `app/common.py` for small project-level common functions:
+`sanic-framework init` renders only the shared project skeleton. It does not create `app/v1`, a demo module, or versioned MVC directories. Add each version explicitly:
+
+```powershell
+sanic-framework add v1
+sanic-framework add v2
+sanic-framework add v1_admin
+```
+
+Use `app/helper.py` for small project-level common functions:
 
 ```python
 def mask_mobile(mobile: str) -> str:
@@ -138,12 +152,27 @@ Use version-level files when behavior is version-specific:
 
 ```text
 app/v1/controller/demo.py
-app/v1/model/demo.py
+app/v1/model/table/demo.py
+app/v1/model/business/
 app/v1/view/demo/index.html
 app/v1/language/
 ```
 
-If logic becomes large, place it in a service module owned by the business project rather than putting everything into a controller.
+Physical table models live under `app/<version>/model/table/`. One physical table maps to one file, and underscores are part of the table name rather than a multi-table convention:
+
+```powershell
+sanic-framework make model v1 a
+sanic-framework make model v1 a_b
+sanic-framework make model v1 a_b_c
+```
+
+Business models live under `app/<version>/model/business/`. They inherit `BusinessModel`, end with the `BusinessModel` suffix, and do not declare `table_name`:
+
+```powershell
+sanic-framework make business-model v1 permission_assign
+```
+
+Keep controllers thin. Shared request checks, payload parsing, and language resolution belong in framework helpers; multi-table workflows belong in business models rather than being stitched together inside controllers.
 
 ## Response Format
 
@@ -170,6 +199,15 @@ raise_code(request, 991111, status_code=400)
 Shared language resources live in `app/language`.
 
 Version-specific overrides live in `app/v1/language`, `app/v2/language`, and so on. Version resources have higher priority than shared resources.
+Framework fallback resources live in `framework/language` when present. The legacy top-level `language/` directory is not part of the formal lookup path.
+
+The formal lookup order is:
+
+1. `app/<version>/language`
+2. `app/language`
+3. `framework/language`
+
+Raise errors by code only. Business code and generated controllers should not pass hard-coded `default`, `msg`, or `errmsg` strings.
 
 Inspect error codes during development:
 
@@ -181,6 +219,16 @@ GET /meta/error-codes?code=991111
 ```
 
 The module ranges are defined in `app/language/modules.ini`.
+
+## Contract Check
+
+Run the project contract checker before committing generated or business code:
+
+```powershell
+sanic-framework check
+```
+
+The checker validates required project files, versioned controller handlers, shared `PUT`/`PATCH` update routing, forbidden `partial_update`, hard-coded error messages, table model contracts, and business model contracts. Errors include the file path and reason.
 
 ## Public Docs
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ast
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+from framework.versioning import normalize_version
 
 
 SCAFFOLD_DIR = Path(__file__).resolve().parents[1] / "scaffold"
@@ -13,10 +16,33 @@ REQUIRED_FILES = [
     "README.md",
     "app/bootstrap.py",
     "app/route.py",
+    "app/common.py",
+    "app/helper.py",
+    "app/event.py",
+    "app/controller",
     "config/defaults.py",
     "app/language/modules.ini",
     "public/docs/index.md",
 ]
+CONTROLLER_HANDLERS = {"index", "info", "create", "update", "delete"}
+HTTP_DECORATORS = {"get", "post", "put", "patch", "delete"}
+RESOURCE_ROUTES = {
+    "index": {("get", "/")},
+    "info": {("get", "/<data_id>")},
+    "create": {("post", "/")},
+    "update": {("put", "/<data_id>"), ("patch", "/<data_id>")},
+    "delete": {("delete", "/<data_id>")},
+}
+VERSION_DIRECTORIES = (
+    "controller",
+    "model",
+    "model/table",
+    "model/business",
+    "view",
+    "language",
+)
+ERROR_CALLS = {"raise_code", "APIException", "Error"}
+BUSINESS_CRUD_METHODS = {"get_one", "find", "get_all", "find_all", "get_count", "get_pagination", "insert", "update", "delete"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +64,10 @@ def _environment() -> Environment:
         autoescape=False,
         keep_trailing_newline=True,
     )
+
+
+def render_scaffold_template(template_name: str, **context) -> str:
+    return _environment().get_template(template_name).render(**context)
 
 
 def render_project_files(target_dir: Path, options: ProjectOptions):
@@ -67,11 +97,6 @@ def _write_if_missing(path: Path, content: str = ""):
 def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
     directories = (
         "app/controller",
-        "app/v1/controller",
-        "app/v1/model",
-        "app/v1/view",
-        "app/v1/language/zh-CN/ERROR",
-        "app/v1/language/en-US/ERROR",
         "config",
         "app/language/zh-CN/ERROR",
         "app/language/en-US/ERROR",
@@ -133,6 +158,13 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
         "    return json_response({\"status\": \"ok\"})\n",
     )
     _write_if_missing(target_dir / "app" / "common.py", "__all__ = []\n")
+    _write_if_missing(
+        target_dir / "app" / "helper.py",
+        "def mask_mobile(mobile: str) -> str:\n"
+        "    if not mobile or len(mobile) < 7:\n"
+        "        return mobile\n"
+        "    return f\"{mobile[:3]}****{mobile[-4:]}\"\n",
+    )
     _write_if_missing(target_dir / "app" / "event.py", "__all__ = []\n")
     _write_if_missing(
         target_dir / "config" / "defaults.py",
@@ -164,5 +196,292 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
 
 
 def check_project(root: Path) -> list[str]:
-    missing = [path for path in REQUIRED_FILES if not (root / path).exists()]
-    return [f"Missing required file: {path}" for path in missing]
+    issues = [f"Missing required file: {path}" for path in REQUIRED_FILES if not (root / path).exists()]
+    issues.extend(_check_version_directories(root))
+    issues.extend(_check_controllers(root))
+    issues.extend(_check_table_models(root))
+    issues.extend(_check_business_models(root))
+    issues.extend(_check_business_code_errors(root))
+    return issues
+
+
+def _relative(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _parse_python(root: Path, path: Path) -> tuple[ast.Module | None, list[str]]:
+    try:
+        return ast.parse(path.read_text(encoding="utf-8"), filename=str(path)), []
+    except SyntaxError as exc:
+        return None, [f"{_relative(root, path)}: invalid Python syntax: {exc.msg}"]
+
+
+def _base_name(base: ast.expr) -> str:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    if isinstance(base, ast.Subscript):
+        return _base_name(base.value)
+    return ""
+
+
+def _inherits(class_node: ast.ClassDef, base_name: str) -> bool:
+    return any(_base_name(base) == base_name for base in class_node.bases)
+
+
+def _class_has_assignment(class_node: ast.ClassDef, name: str) -> bool:
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    return True
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
+            return True
+    return False
+
+
+def _module_assignment(module: ast.Module, name: str) -> str | None:
+    for node in module.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                return value.value
+            return ""
+    return None
+
+
+def _class_assignment_value(class_node: ast.ClassDef, name: str) -> object:
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            if isinstance(value, ast.Constant):
+                return value.value
+            return None
+    return None
+
+
+def _route_decorators(function_node: ast.AsyncFunctionDef | ast.FunctionDef) -> list[tuple[str, str]]:
+    routes: list[tuple[str, str]] = []
+    for decorator in function_node.decorator_list:
+        call = decorator if isinstance(decorator, ast.Call) else None
+        func = call.func if call is not None else decorator
+        if not isinstance(func, ast.Attribute) or func.attr not in HTTP_DECORATORS:
+            continue
+        route = ""
+        if call is not None and call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
+            route = call.args[0].value
+        routes.append((func.attr, route))
+    return routes
+
+
+def _call_name(node: ast.Call) -> str:
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _has_hard_coded_error_message(function_node: ast.AST) -> bool:
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Call):
+            continue
+        if _call_name(node) not in ERROR_CALLS:
+            continue
+        for keyword in node.keywords:
+            if keyword.arg in {"default", "msg", "errmsg"} and isinstance(keyword.value, ast.Constant):
+                if isinstance(keyword.value.value, str) and keyword.value.value:
+                    return True
+    return False
+
+
+def _version_paths(root: Path) -> list[Path]:
+    app_root = root / "app"
+    if not app_root.exists():
+        return []
+    paths = []
+    for path in app_root.iterdir():
+        if not path.is_dir():
+            continue
+        try:
+            normalize_version(path.name)
+        except ValueError:
+            continue
+        paths.append(path)
+    return paths
+
+
+def _check_version_directories(root: Path) -> list[str]:
+    issues: list[str] = []
+    for version_path in _version_paths(root):
+        for relative in VERSION_DIRECTORIES:
+            path = version_path / relative
+            if not path.exists():
+                issues.append(f"{_relative(root, path)}: required directory is missing")
+    return issues
+
+
+def _check_controllers(root: Path) -> list[str]:
+    issues: list[str] = []
+    for version_path in _version_paths(root):
+        controller_root = version_path / "controller"
+        if not controller_root.exists():
+            continue
+        for path in sorted(controller_root.glob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            module, parse_issues = _parse_python(root, path)
+            issues.extend(parse_issues)
+            if module is None:
+                continue
+            functions = [
+                node
+                for node in module.body
+                if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and not node.name.startswith("_")
+            ]
+            name_counts = Counter(node.name for node in functions)
+            names = set(name_counts)
+            controller_kind = _module_assignment(module, "CONTROLLER_KIND")
+            if controller_kind not in {"resource", "action", None}:
+                issues.append(f"{_relative(root, path)}: CONTROLLER_KIND must be resource or action")
+            if controller_kind is None and CONTROLLER_HANDLERS.issubset(names):
+                controller_kind = "resource"
+            if "partial_update" in names:
+                issues.append(f"{_relative(root, path)}: partial_update is forbidden")
+            for function_node in functions:
+                if _has_hard_coded_error_message(function_node):
+                    issues.append(f"{_relative(root, path)}: hard coded error messages are forbidden")
+            if controller_kind == "resource":
+                extra = sorted(names - CONTROLLER_HANDLERS)
+                missing = sorted(CONTROLLER_HANDLERS - names)
+                duplicates = sorted(name for name, count in name_counts.items() if count > 1)
+                if extra:
+                    issues.append(f"{_relative(root, path)}: resource controller has unsupported handlers: {', '.join(extra)}")
+                if missing:
+                    issues.append(f"{_relative(root, path)}: resource controller is missing handlers: {', '.join(missing)}")
+                if duplicates:
+                    issues.append(f"{_relative(root, path)}: duplicate handlers are forbidden: {', '.join(duplicates)}")
+                for handler, expected_routes in RESOURCE_ROUTES.items():
+                    matches = [node for node in functions if node.name == handler]
+                    if len(matches) != 1:
+                        if handler == "update":
+                            issues.append(f"{_relative(root, path)}: update must bind both PUT and PATCH on /<data_id>")
+                        continue
+                    actual_routes = set(_route_decorators(matches[0]))
+                    if actual_routes != expected_routes:
+                        expected = ", ".join(f"{method.upper()} {route}" for method, route in sorted(expected_routes))
+                        issues.append(f"{_relative(root, path)}: {handler} must bind {expected}")
+            elif controller_kind is None and functions:
+                issues.append(f"{_relative(root, path)}: CONTROLLER_KIND must be declared as resource or action")
+    return issues
+
+
+def _check_table_models(root: Path) -> list[str]:
+    issues: list[str] = []
+    for version_path in _version_paths(root):
+        table_root = version_path / "model" / "table"
+        if not table_root.exists():
+            continue
+        for path in sorted(table_root.glob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            module, parse_issues = _parse_python(root, path)
+            issues.extend(parse_issues)
+            if module is None:
+                continue
+            classes = [node for node in module.body if isinstance(node, ast.ClassDef)]
+            if any(_inherits(node, "BusinessModel") for node in classes):
+                issues.append(f"{_relative(root, path)}: BusinessModel must not be placed in model/table")
+            model_classes = [node for node in classes if _inherits(node, "Model")]
+            if len(model_classes) != 1:
+                issues.append(f"{_relative(root, path)}: table model files must define exactly one class that inherit Model")
+            candidate = model_classes[0] if model_classes else classes[0] if classes else None
+            if candidate is None or not _class_has_assignment(candidate, "table_name"):
+                issues.append(f"{_relative(root, path)}: table model must declare table_name")
+            elif candidate is not None:
+                table_name = _class_assignment_value(candidate, "table_name")
+                if not isinstance(table_name, str) or not table_name:
+                    issues.append(f"{_relative(root, path)}: table_name must be a non-empty string")
+                elif path.stem != table_name:
+                    issues.append(f"{_relative(root, path)}: file name must match table_name")
+    return issues
+
+
+def _check_business_models(root: Path) -> list[str]:
+    issues: list[str] = []
+    for version_path in _version_paths(root):
+        business_root = version_path / "model" / "business"
+        if not business_root.exists():
+            continue
+        for path in sorted(business_root.glob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            module, parse_issues = _parse_python(root, path)
+            issues.extend(parse_issues)
+            if module is None:
+                continue
+            classes = [node for node in module.body if isinstance(node, ast.ClassDef)]
+            if any(_inherits(node, "Model") for node in classes):
+                issues.append(f"{_relative(root, path)}: Business model must not inherit Model")
+            business_classes = [node for node in classes if _inherits(node, "BusinessModel")]
+            if len(business_classes) != 1:
+                issues.append(f"{_relative(root, path)}: business model files must define exactly one class that inherit BusinessModel")
+                continue
+            class_node = business_classes[0]
+            if not class_node.name.endswith("BusinessModel"):
+                issues.append(f"{_relative(root, path)}: business model class name must end with BusinessModel")
+            if _class_has_assignment(class_node, "table_name"):
+                issues.append(f"{_relative(root, path)}: BusinessModel must not declare table_name")
+            crud_methods = sorted(
+                node.name
+                for node in class_node.body
+                if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name in BUSINESS_CRUD_METHODS
+            )
+            if crud_methods:
+                issues.append(f"{_relative(root, path)}: BusinessModel must not define single-table CRUD methods: {', '.join(crud_methods)}")
+    return issues
+
+
+def _check_business_code_errors(root: Path) -> list[str]:
+    issues: list[str] = []
+    files: list[Path] = []
+    for version_path in _version_paths(root):
+        for relative in ("controller", "model/table", "model/business"):
+            directory = version_path / relative
+            if directory.exists():
+                files.extend(path for path in directory.glob("*.py") if path.name != "__init__.py")
+    for relative in ("app/helper.py", "app/event.py"):
+        path = root / relative
+        if path.exists():
+            files.append(path)
+    seen: set[Path] = set()
+    for path in files:
+        if path in seen:
+            continue
+        seen.add(path)
+        module, parse_issues = _parse_python(root, path)
+        issues.extend(parse_issues)
+        if module is None:
+            continue
+        if _has_hard_coded_error_message(module):
+            issues.append(f"{_relative(root, path)}: hard coded error messages are forbidden")
+    return issues

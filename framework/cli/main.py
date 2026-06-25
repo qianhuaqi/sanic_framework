@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+import sys
 
 from framework.cli.project import ProjectOptions
 from framework.cli.project import check_project
+from framework.cli.project import render_scaffold_template
 from framework.cli.project import render_project_files
+from framework.versioning import normalize_version
 
 
-VERSION_PATTERN = re.compile(r"^v[0-9][A-Za-z0-9_]*$")
 MODULE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -26,11 +28,12 @@ def _touch_init(directory: Path):
     _write_if_missing(directory / "__init__.py", "__all__ = []\n")
 
 
-def normalize_version(version: str) -> str:
-    normalized = version.strip().replace("-", "_")
-    if not VERSION_PATTERN.match(normalized):
-        raise ValueError("Version name must look like v1, v2, or v1_admin")
-    return normalized
+def require_version(version: str, root: str | Path = ".") -> Path:
+    version_name = normalize_version(version)
+    version_root = Path(root).resolve() / "app" / version_name
+    if not version_root.exists():
+        raise ValueError(f"Version '{version_name}' does not exist. Run: sanic-framework add {version_name}")
+    return version_root
 
 
 def normalize_module_name(module: str) -> str:
@@ -38,6 +41,14 @@ def normalize_module_name(module: str) -> str:
     if not MODULE_PATTERN.match(normalized):
         raise ValueError("Module name must use snake_case, such as demo or user_profile")
     return normalized
+
+
+def normalize_table_name(table: str) -> str:
+    return normalize_module_name(table)
+
+
+def normalize_business_name(name: str) -> str:
+    return normalize_module_name(name)
 
 
 def _pascal_case(value: str) -> str:
@@ -88,6 +99,8 @@ def add_version(version: str, root: str | Path = ".") -> list[Path]:
         version_root,
         version_root / "controller",
         version_root / "model",
+        version_root / "model" / "table",
+        version_root / "model" / "business",
         version_root / "view",
     ):
         existed = directory.exists()
@@ -115,105 +128,26 @@ def make_module(version: str, module: str, root: str | Path = ".") -> list[Path]
     version_name = normalize_version(version)
     module_name = normalize_module_name(module)
     model_class = f"{_pascal_case(module_name)}Model"
-    version_root = root_path / "app" / version_name
+    version_root = require_version(version_name, root_path)
     docs_root = root_path / "public" / "docs" / version_name
-    created = add_version(version_name, root_path)
+    created: list[Path] = []
 
     view_dir = version_root / "view" / module_name
     docs_root.mkdir(parents=True, exist_ok=True)
     _touch_init(view_dir)
 
-    controller = f'''from __future__ import annotations
-
-from sanic import Blueprint
-
-from app.{version_name}.model.{module_name} import {model_class}
-from framework.controller import require_mysql, require_payload
-from framework.exception import raise_code
-from framework.response import json_response
-
-
-bp = Blueprint("{version_name}_{module_name}", url_prefix="/{version_name}/{module_name}")
-
-
-@bp.get("/")
-async def index(request):
-    require_mysql(request)
-    page = int(request.args.get("page", 1))
-    size = int(request.args.get("size", 10))
-    use_master = request.args.get("use_master", "").lower() in {{"1", "true", "yes", "on"}}
-    request.app.ctx.logger.debug("{module_name}.index page=%s size=%s use_master=%s", page, size, use_master)
-    result = await {model_class}(request).get_pagination(page=page, size=size, use_master=use_master)
-    return json_response(result)
-
-
-@bp.get("/<data_id>")
-async def info(request, data_id):
-    require_mysql(request)
-    use_cache = request.args.get("use_cache", "1").lower() not in {{"0", "false", "no", "off"}}
-    use_master = request.args.get("use_master", "").lower() in {{"1", "true", "yes", "on"}}
-    request.app.ctx.logger.debug("{module_name}.info id=%s use_cache=%s use_master=%s", data_id, use_cache, use_master)
-    item = await {model_class}(request).get_one(data_id, use_master=use_master, use_cache=use_cache)
-    if item is None:
-        raise_code(request, 990202, status_code=404, default="{module_name} row not found")
-    return json_response(item)
-
-
-@bp.post("/")
-async def create(request):
-    require_mysql(request)
-    payload = require_payload(request)
-    request.app.ctx.logger.info("{module_name}.create fields=%s", sorted(payload.keys()))
-    data_id = await {model_class}(request).insert(**payload)
-    return json_response({{"id": data_id, "payload": payload}}, status=201)
-
-
-@bp.put("/<data_id>")
-async def update(request, data_id):
-    require_mysql(request)
-    payload = require_payload(request)
-    request.app.ctx.logger.info("{module_name}.update id=%s fields=%s", data_id, sorted(payload.keys()))
-    result = await {model_class}(request).update(data_id, **payload)
-    return json_response({{"id": data_id, "updated": result}})
-
-
-@bp.delete("/<data_id>")
-async def delete(request, data_id):
-    require_mysql(request)
-    request.app.ctx.logger.info("{module_name}.delete id=%s", data_id)
-    result = await {model_class}(request).delete(data_id)
-    return json_response({{"id": data_id, "deleted": result}})
-'''
-    model = f'''from framework.model.model import Model
-
-
-class {model_class}(Model):
-    table_name = "{module_name}"
-    read_source = "auto"
-    cache_enabled = True
-'''
-    view = f'''<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <title>{version_name}/{module_name}</title>
-</head>
-<body></body>
-</html>
-'''
-    docs = f'''# {version_name}/{module_name}
-
-RESTful routes:
-
-- `GET /{version_name}/{module_name}`
-- `GET /{version_name}/{module_name}/<id>`
-- `POST /{version_name}/{module_name}`
-- `PUT /{version_name}/{module_name}/<id>`
-- `DELETE /{version_name}/{module_name}/<id>`
-'''
+    controller = render_scaffold_template(
+        "controller.py.j2",
+        version_name=version_name,
+        module_name=module_name,
+        model_class=model_class,
+    )
+    model = render_scaffold_template("table_model.py.j2", model_class=model_class, table_name=module_name)
+    view = render_scaffold_template("view.html.j2", version_name=version_name, module_name=module_name)
+    docs = render_scaffold_template("docs.md.j2", version_name=version_name, module_name=module_name)
     files = {
         version_root / "controller" / f"{module_name}.py": controller,
-        version_root / "model" / f"{module_name}.py": model,
+        version_root / "model" / "table" / f"{module_name}.py": model,
         view_dir / "index.html": view,
         docs_root / f"{module_name}.md": docs,
     }
@@ -222,6 +156,38 @@ RESTful routes:
             created.append(path)
     if _register_module_route(root_path, version_name, module_name):
         created.append(root_path / "app" / "route.py")
+    return created
+
+
+def make_model(version: str, table: str, root: str | Path = ".") -> list[Path]:
+    root_path = Path(root).resolve()
+    version_name = normalize_version(version)
+    require_version(version_name, root_path)
+    table_name = normalize_table_name(table)
+    model_class = f"{_pascal_case(table_name)}Model"
+    created: list[Path] = []
+    model = render_scaffold_template("table_model.py.j2", model_class=model_class, table_name=table_name)
+    path = root_path / "app" / version_name / "model" / "table" / f"{table_name}.py"
+    if _write_if_missing(path, model):
+        created.append(path)
+    return created
+
+
+def make_business_model(version: str, business: str, root: str | Path = ".") -> list[Path]:
+    root_path = Path(root).resolve()
+    version_name = normalize_version(version)
+    require_version(version_name, root_path)
+    business_name = normalize_business_name(business)
+    model_class = f"{_pascal_case(business_name)}BusinessModel"
+    created: list[Path] = []
+    model = render_scaffold_template(
+        "business_model.py.j2",
+        model_class=model_class,
+        business_name=business_name,
+    )
+    path = root_path / "app" / version_name / "model" / "business" / f"{business_name}.py"
+    if _write_if_missing(path, model):
+        created.append(path)
     return created
 
 
@@ -250,6 +216,14 @@ def build_parser() -> argparse.ArgumentParser:
     module_parser.add_argument("version", help="Version name, for example v1")
     module_parser.add_argument("module", help="Module name, for example demo")
     module_parser.add_argument("--root", default=".", help="Project root directory")
+    model_parser = make_subparsers.add_parser("model", help="Create a table model")
+    model_parser.add_argument("version", help="Version name, for example v1")
+    model_parser.add_argument("table", help="Physical table name, for example a_b")
+    model_parser.add_argument("--root", default=".", help="Project root directory")
+    business_model_parser = make_subparsers.add_parser("business-model", help="Create a business model")
+    business_model_parser.add_argument("version", help="Version name, for example v1")
+    business_model_parser.add_argument("business", help="Business model name, for example permission_assign")
+    business_model_parser.add_argument("--root", default=".", help="Project root directory")
 
     check_parser = subparsers.add_parser("check", help="Check required project files")
     check_parser.add_argument("--root", default=".", help="Project root directory")
@@ -259,40 +233,54 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "init":
-        app_name = args.app_name or args.project_name.replace("-", "_")
-        databases = [item.strip() for item in args.databases.split(",") if item.strip()]
-        options = ProjectOptions(
-            project_name=args.project_name,
-            app_name=app_name,
-            port=args.port,
-            databases=databases,
-            enable_auth=not args.disable_auth,
-            enable_signing=not args.disable_signing,
-            enable_i18n=not args.disable_i18n,
-            enable_response_cache=not args.disable_response_cache,
-            include_example=True,
-        )
-        render_project_files(Path(args.root), options)
-        return 0
-    if args.command == "add":
-        created = add_version(args.version, args.root)
-        for path in created:
-            print(path)
-        return 0
-    if args.command == "make" and args.make_command == "module":
-        created = make_module(args.version, args.module, args.root)
-        for path in created:
-            print(path)
-        return 0
-    if args.command == "check":
-        issues = check_project(Path(args.root))
-        if issues:
-            for issue in issues:
-                print(issue)
-            return 1
-        print("Project check passed")
-        return 0
+    try:
+        if args.command == "init":
+            app_name = args.app_name or args.project_name.replace("-", "_")
+            databases = [item.strip() for item in args.databases.split(",") if item.strip()]
+            options = ProjectOptions(
+                project_name=args.project_name,
+                app_name=app_name,
+                port=args.port,
+                databases=databases,
+                enable_auth=not args.disable_auth,
+                enable_signing=not args.disable_signing,
+                enable_i18n=not args.disable_i18n,
+                enable_response_cache=not args.disable_response_cache,
+                include_example=False,
+            )
+            render_project_files(Path(args.root), options)
+            return 0
+        if args.command == "add":
+            created = add_version(args.version, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "make" and args.make_command == "module":
+            created = make_module(args.version, args.module, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "make" and args.make_command == "model":
+            created = make_model(args.version, args.table, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "make" and args.make_command == "business-model":
+            created = make_business_model(args.version, args.business, args.root)
+            for path in created:
+                print(path)
+            return 0
+        if args.command == "check":
+            issues = check_project(Path(args.root))
+            if issues:
+                for issue in issues:
+                    print(issue)
+                return 1
+            print("Project check passed")
+            return 0
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     parser.error(f"Unknown command: {args.command}")
     return 2
 

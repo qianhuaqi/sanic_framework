@@ -33,6 +33,7 @@ def test_initializer_renders_no_database_project(tmp_path):
     assert (tmp_path / "README.md").exists()
     assert (tmp_path / "run.py").exists()
     assert (tmp_path / "app" / "bootstrap.py").exists()
+    assert (tmp_path / "app" / "helper.py").exists()
     assert (tmp_path / "app" / "route.py").exists()
     assert (tmp_path / "app" / "controller" / "health.py").exists()
     assert (tmp_path / "config" / "defaults.py").exists()
@@ -40,6 +41,7 @@ def test_initializer_renders_no_database_project(tmp_path):
     assert not (tmp_path / "config" / "settings.py").exists()
     assert not (tmp_path / "app" / "language" / "__init__.py").exists()
     assert not (tmp_path / "app" / "language" / "zh-CN" / "ERROR" / "__init__.py").exists()
+    assert not (tmp_path / "app" / "v1").exists()
     assert (tmp_path / "public" / "docs" / "index.md").exists()
 
 
@@ -124,6 +126,15 @@ def test_initialized_project_make_module_is_registered(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{tmp_path}{os.pathsep}{ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
     env["SANIC_ENV"] = "testing"
+    add_result = subprocess.run(
+        [sys.executable, "-m", "framework.cli.main", "add", "v1", "--root", str(tmp_path)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert add_result.returncode == 0, add_result.stderr
+
     make_result = subprocess.run(
         [sys.executable, "-m", "framework.cli.main", "make", "module", "v1", "demo", "--root", str(tmp_path)],
         cwd=tmp_path,

@@ -1,21 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import json
+import os
 
-from framework.middleware.api_exception import APIException
+from framework.exception import APIException, get_error_message
 from framework.middleware.json import CustomJSONEncoder
 
 
 def get_error(request, error_type, errcode, status_code=200):
-    i18n = request.app.ctx.i18n
-    msg = i18n[error_type].get(str(errcode))
-    raise APIException(errcode=errcode, errmsg=msg, status_code=status_code)
+    raise APIException(code=errcode, msg=get_error_message(request, errcode), status_code=status_code)
 
 
 def Error(request, error_type, errcode, data=None, status_code=200):
-    i18n = request.app.ctx.i18n
-    msg = i18n[error_type].get(str(errcode))
-    return APIException(errcode=errcode, errmsg=msg, data=data, status_code=status_code)
+    return APIException(code=errcode, msg=get_error_message(request, errcode), data=data, status_code=status_code)
 
 
 def exists_path(path):

@@ -1,6 +1,10 @@
 import asyncio
 
-from app.v1.model.demo import CatalogModel, OrderModel
+import pytest
+
+from app.v1.model.table.catalog import CatalogModel
+from app.v1.model.table.orders import OrderModel
+from framework.model.business import BusinessModel
 
 
 class FakeRedis:
@@ -97,3 +101,8 @@ def test_legacy_model_demo_keeps_old_style_and_master_default():
         assert any(call[0] == "execute_update" for call in mysql.calls)
 
     asyncio.run(scenario())
+
+
+def test_business_model_rejects_table_name():
+    with pytest.raises(TypeError, match="must not declare table_name"):
+        type("InvalidBusinessModel", (BusinessModel,), {"table_name": "demo"})

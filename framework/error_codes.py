@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from configparser import ConfigParser
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -217,11 +218,32 @@ def parse_error_code_catalog(
     return sorted(records.values(), key=lambda item: item.code)
 
 
+def _cache_key_for_roots(locale_root: str | Path | Iterable[str | Path]) -> tuple[str, ...]:
+    return tuple(str(root.resolve()) for root in _normalize_locale_roots(locale_root))
+
+
+@lru_cache(maxsize=64)
+def _parse_error_code_catalog_cached(
+    roots: tuple[str, ...],
+    module_map_path: str | None,
+) -> tuple[ErrorCodeRecord, ...]:
+    return tuple(parse_error_code_catalog([Path(root) for root in roots], module_map_path=module_map_path))
+
+
+def parse_error_code_catalog_cached(
+    locale_root: str | Path | Iterable[str | Path],
+    module_map_path: str | Path | None = None,
+) -> list[ErrorCodeRecord]:
+    roots = _cache_key_for_roots(locale_root)
+    module_map = str(Path(module_map_path).resolve()) if module_map_path is not None else None
+    return list(_parse_error_code_catalog_cached(roots, module_map))
+
+
 def build_error_code_index(
     locale_root: str | Path | Iterable[str | Path],
     module_map_path: str | Path | None = None,
 ) -> dict[str, object]:
-    records = parse_error_code_catalog(locale_root, module_map_path=module_map_path)
+    records = parse_error_code_catalog_cached(locale_root, module_map_path=module_map_path)
     if module_map_path is None:
         module_map_path = Path(__file__).with_name("modules.ini")
     module_ranges = parse_module_ranges(module_map_path)
@@ -265,7 +287,7 @@ def resolve_error_message(
     normalized_code = str(code).strip()
     normalized_locale = normalize_locale_name(locale)
     try:
-        records = parse_error_code_catalog(locale_root, module_map_path=module_map_path)
+        records = parse_error_code_catalog_cached(locale_root, module_map_path=module_map_path)
     except (FileNotFoundError, ValueError):
         return default or normalized_code
     for record in records:

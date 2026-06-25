@@ -64,7 +64,8 @@ def test_demo_routes_expose_table_crud_endpoints(monkeypatch):
         assert edit_response.status == 200
         assert edit_response.json["data"]["updated"] == 1
 
-        assert patch_response.status == 405
+        assert patch_response.status == 200
+        assert patch_response.json["data"]["updated"] == 1
 
         assert del_response.status == 200
         assert del_response.json["data"]["deleted"] == 1
