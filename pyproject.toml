@@ -48,4 +48,9 @@ where = ["src"]
 include = ["lingshu*"]
 
 [tool.setuptools.package-data]
-lingshu = ["resources/error_codes/modules.ini", "language/**/*.ini", "scaffold/*.j2"]
+lingshu = [
+  "resources/error_codes/*.ini",
+  "system/error_codes/*.json",
+  "language/**/*.ini",
+  "scaffold/*.j2",
+]

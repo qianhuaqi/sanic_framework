@@ -1,0 +1,5 @@
+{
+  "name": "lingshu-internal-error-codes",
+  "registry": "lingshu/resources/error_codes/modules.ini",
+  "locales": ["zh-CN", "en-US"]
+}
