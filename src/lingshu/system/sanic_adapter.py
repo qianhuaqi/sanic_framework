@@ -146,7 +146,10 @@ async def finalize_request_context(raw_request, *, reason=None):
         cleanup_errors.append(exc)
         logger = get_optional_resource(raw_request.app, "logger")
         if logger is not None:
-            logger.debug("Request task cleanup error: %s", exc)
+            from lingshu.system.tasks import _summarize_exception
+
+            exc_type, safe_msg = _summarize_exception(exc)
+            logger.debug("Request task cleanup error: %s: %s", exc_type, safe_msg)
     finally:
         if ctx is not None and getattr(ctx, "lingshu_in_flight_entered", False):
             tracker = getattr(raw_request.app.ctx, "in_flight_tracker", None)
