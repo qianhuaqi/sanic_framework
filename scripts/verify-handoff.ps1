@@ -8,8 +8,12 @@ $ErrorActionPreference = "Stop"
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     $output = & git @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -ne 0) {
         throw "git $($Arguments -join ' ') failed: $output"
     }
     return $output
@@ -58,6 +62,28 @@ function Assert-HeadMatchesRemote {
     }
 }
 
+function Assert-GitCommitExists {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & git rev-parse --verify --quiet "$Commit^{commit}" > $null 2> $null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -ne 0) {
+        throw "HANDOFF Work commit '$Commit' does not exist. Update docs/codex/HANDOFF.md."
+    }
+}
+
+function Assert-GitCommitIsAncestor {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+
+    & git merge-base --is-ancestor $Commit HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "HANDOFF Work commit '$Commit' is not an ancestor of current HEAD. Update docs/codex/HANDOFF.md."
+    }
+}
+
 function Read-HandoffFields {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -77,23 +103,27 @@ function Read-HandoffFields {
 function Assert-HandoffMatchesRepository {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Fields,
-        [Parameter(Mandatory = $true)][string]$BranchName,
-        [Parameter(Mandatory = $true)][string]$LocalHead,
-        [Parameter(Mandatory = $true)][string]$RemoteHead
+        [Parameter(Mandatory = $true)][string]$BranchName
     )
 
     if ($Fields["Branch"] -ne $BranchName) {
         throw "HANDOFF Branch is '$($Fields["Branch"])', expected '$BranchName'. Update docs/codex/HANDOFF.md."
     }
-    if ($Fields["Local HEAD"] -ne $LocalHead) {
-        throw "HANDOFF Local HEAD does not match actual HEAD. Update docs/codex/HANDOFF.md."
-    }
-    if ($Fields["Remote HEAD"] -ne $RemoteHead) {
-        throw "HANDOFF Remote HEAD does not match github/$BranchName. Update docs/codex/HANDOFF.md."
-    }
     if ($Fields["Worktree"] -ne "clean") {
         throw "HANDOFF Worktree must be clean. Update docs/codex/HANDOFF.md after committing."
     }
+    if (-not $Fields.ContainsKey("Work commit") -or -not $Fields["Work commit"]) {
+        throw "HANDOFF Work commit is missing. Update docs/codex/HANDOFF.md."
+    }
+    if ($Fields.Values | Where-Object { $_ -match "pending" }) {
+        throw "HANDOFF contains a pending placeholder. Replace it before handoff."
+    }
+    $workCommit = $Fields["Work commit"]
+    if ($workCommit -notmatch "^[0-9a-f]{40}$") {
+        throw "HANDOFF Work commit must be a full 40-character SHA."
+    }
+    Assert-GitCommitExists $workCommit
+    Assert-GitCommitIsAncestor $workCommit
 }
 
 function Assert-NoGeneratedUntrackedArtifacts {
@@ -139,18 +169,21 @@ try {
     Invoke-Git @("fetch", "github") | Out-Null
     Assert-HeadMatchesRemote $Branch
 
-    $localHead = Get-FullSha "HEAD"
-    $remoteHead = Get-FullSha "github/$Branch"
     $handoffPath = Join-Path $repoRoot "docs/codex/HANDOFF.md"
     $fields = Read-HandoffFields $handoffPath
 
-    Assert-HandoffMatchesRepository $fields $Branch $localHead $remoteHead
+    Assert-HandoffMatchesRepository $fields $Branch
     Assert-NoGeneratedUntrackedArtifacts $repoRoot
 
+    $localHead = Get-FullSha "HEAD"
+    $remoteHead = Get-FullSha "github/$Branch"
+    Write-Host "Branch: $Branch"
+    Write-Host "Local HEAD: $localHead"
+    Write-Host "Remote HEAD: $remoteHead"
     Write-Host "Handoff verification passed"
     exit 0
 }
 catch {
-    Write-Error $_.Exception.Message
+    [Console]::Error.WriteLine($_.Exception.Message)
     exit 1
 }

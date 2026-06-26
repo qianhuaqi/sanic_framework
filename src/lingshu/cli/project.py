@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+from lingshu.error_codes import validate_module_registry
 from lingshu.versioning import normalize_version
 
 
@@ -116,10 +117,15 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
 
     _write_if_missing(
         target_dir / "run.py",
-        "from lingshu.app import create_app\n\n\n"
+        "try:\n"
+        "    from lingshu.app import create_app\n"
+        "    from lingshu.runtime import run_app\n"
+        "except ModuleNotFoundError as exc:\n"
+        "    if exc.name == \"lingshu\":\n"
+        "        raise SystemExit('LingShu is not installed. Run: python -m pip install -e \".[dev]\"') from exc\n"
+        "    raise\n\n\n"
         "app = create_app()\n\n\n"
         "if __name__ == \"__main__\":\n"
-        "    from lingshu.runtime import run_app\n\n"
         "    run_app(app)\n",
     )
     _write_if_missing(
@@ -188,12 +194,14 @@ def _render_project_skeleton(target_dir: Path, options: ProjectOptions):
     _write_if_missing(
         target_dir / "app" / "language" / "modules.ini",
         "[Modules]\n"
-        "110000-119999 = user\n",
+        "# Add project business ranges here, for example:\n"
+        "# 110000-119999 = user\n",
     )
 
 
 def check_project(root: Path) -> list[str]:
     issues = [f"Missing required file: {path}" for path in REQUIRED_FILES if not (root / path).exists()]
+    issues.extend(validate_module_registry(root))
     issues.extend(_check_version_directories(root))
     issues.extend(_check_controllers(root))
     issues.extend(_check_table_models(root))

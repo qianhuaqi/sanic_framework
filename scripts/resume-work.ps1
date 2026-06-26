@@ -8,8 +8,12 @@ $ErrorActionPreference = "Stop"
 function Invoke-Git {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     $output = & git @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -ne 0) {
         throw "git $($Arguments -join ' ') failed: $output"
     }
     return $output
@@ -53,6 +57,70 @@ function Assert-HeadMatchesRemote {
     }
 }
 
+function Assert-GitCommitExists {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & git rev-parse --verify --quiet "$Commit^{commit}" > $null 2> $null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -ne 0) {
+        throw "HANDOFF Work commit '$Commit' does not exist. Stop before editing code."
+    }
+}
+
+function Assert-GitCommitIsAncestor {
+    param([Parameter(Mandatory = $true)][string]$Commit)
+
+    & git merge-base --is-ancestor $Commit HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "HANDOFF Work commit '$Commit' is not an ancestor of current HEAD. Stop before editing code."
+    }
+}
+
+function Read-HandoffFields {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "docs/codex/HANDOFF.md is missing. Stop before editing code."
+    }
+
+    $fields = @{}
+    Get-Content $Path | ForEach-Object {
+        if ($_ -match "^([^:#][^:]+):\s*(.*)$") {
+            $fields[$Matches[1].Trim()] = $Matches[2].Trim()
+        }
+    }
+    return $fields
+}
+
+function Assert-HandoffIsValid {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Fields,
+        [Parameter(Mandatory = $true)][string]$BranchName
+    )
+
+    if ($Fields["Branch"] -ne $BranchName) {
+        throw "HANDOFF Branch is '$($Fields["Branch"])', expected '$BranchName'. Stop before editing code."
+    }
+    if ($Fields["Worktree"] -ne "clean") {
+        throw "HANDOFF Worktree must be clean. Stop before editing code."
+    }
+    if (-not $Fields.ContainsKey("Work commit") -or -not $Fields["Work commit"]) {
+        throw "HANDOFF Work commit is missing. Stop before editing code."
+    }
+    if ($Fields.Values | Where-Object { $_ -match "pending" }) {
+        throw "HANDOFF contains a pending placeholder. Stop before editing code."
+    }
+    $workCommit = $Fields["Work commit"]
+    if ($workCommit -notmatch "^[0-9a-f]{40}$") {
+        throw "HANDOFF Work commit must be a full 40-character SHA."
+    }
+    Assert-GitCommitExists $workCommit
+    Assert-GitCommitIsAncestor $workCommit
+}
+
 function Get-CurrentPrNumber {
     param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
 
@@ -84,6 +152,8 @@ try {
     $currentBranch = (Invoke-Git @("branch", "--show-current") | Select-Object -First 1).Trim()
     $currentHead = Get-FullSha "HEAD"
     $handoffPath = Join-Path $repoRoot "docs/codex/HANDOFF.md"
+    $handoffFields = Read-HandoffFields $handoffPath
+    Assert-HandoffIsValid $handoffFields $Branch
     $prNumber = Get-CurrentPrNumber $repoRoot
 
     Write-Host "Current branch: $currentBranch"
@@ -103,6 +173,6 @@ try {
     exit 0
 }
 catch {
-    Write-Error $_.Exception.Message
+    [Console]::Error.WriteLine($_.Exception.Message)
     exit 1
 }

@@ -29,6 +29,14 @@ This repository uses a strict GitHub-first workflow for LingShu Framework develo
 - Confirm the worktree is clean.
 - Confirm local `HEAD` equals `github/<branch>`.
 
+## Prohibited Git Actions
+
+- Do not run `git reset --hard`.
+- Do not run `git clean -fd`.
+- Do not rebase this phase branch.
+- Do not force push.
+- Do not automatically save local changes outside an explicit commit.
+
 ## Phase B Boundaries
 
 - Business code must not import `lingshu.system`.

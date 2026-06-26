@@ -356,6 +356,105 @@ Next action:
 
 `[WORKING]` 和 `[HANDOFF]` 评论只记录通用开发状态，不记录凭据、本地用户名、网络地址或真实地点名称。
 
+## Local Development Setup
+
+PowerShell recommended flow:
+
+```powershell
+.\scripts\setup-dev.ps1
+.\.venv\Scripts\python.exe run.py
+```
+
+Manual flow:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe run.py
+```
+
+PyCharm setup:
+
+- Interpreter: choose this repository's `.venv`.
+- Working directory: use the repository root.
+- Script path: use `run.py` from the repository root.
+
+This repository uses `src` layout. Do not use `sys.path.insert()` to bypass editable install. If `run.py` says LingShu is not installed, run:
+
+```powershell
+python -m pip install -e ".[dev]"
+```
+
+## Cross-Device Handoff
+
+Only one computer may write to a phase branch at a time. Before editing, confirm the latest GitHub PR comments do not contain an open `[WORKING]` lock. Another computer may continue only after the latest status is `[HANDOFF]` and the remote branch is up to date.
+
+Use only `office` or `home` for location labels. Do not record real locations, accounts, network addresses, credentials, or local absolute paths.
+
+### Before Leaving
+
+```powershell
+git status
+# Run relevant tests for this change
+git add -A
+git commit -m "chore: checkpoint current work"
+git push github <current-branch>
+.\scripts\verify-handoff.ps1 -Branch <current-branch>
+```
+
+`HANDOFF.md` must not require `Local HEAD` or `Remote HEAD` to equal the commit that contains the file. That is a SHA self-reference loop. The file records `Work commit` as the work baseline; `verify-handoff.ps1` prints the final remote HEAD, and the final remote HEAD is recorded in the PR `[HANDOFF]` comment.
+
+### On The Other Computer
+
+```powershell
+git status
+.\scripts\resume-work.ps1 -Branch <current-branch>
+```
+
+Then confirm:
+
+1. Read `AGENTS.md`.
+2. Read `docs/codex/CURRENT_PHASE.md`.
+3. Read `docs/codex/HANDOFF.md`.
+4. Read the latest PR comments.
+5. Verify local HEAD equals remote HEAD.
+6. Start editing only after those checks pass.
+
+### PR Work Lock
+
+Start work with a PR comment:
+
+```text
+[WORKING]
+Location: office
+Branch: codex/phase-b-lingshu-context
+Start SHA: <full-sha>
+Tasks:
+- ...
+```
+
+End or transfer work with a PR comment:
+
+```text
+[HANDOFF]
+Location: office
+Branch: codex/phase-b-lingshu-context
+Work commit: <full-sha>
+Remote HEAD: <full-sha>
+Worktree: clean
+Tests:
+- ...
+Completed:
+- ...
+Remaining:
+- ...
+Next action:
+- ...
+```
+
+`[WORKING]` and `[HANDOFF]` comments record generic development state only. Do not include credentials, local usernames, network addresses, or real location names.
+
 ## Security Notes
 
 Do not commit `.env`.

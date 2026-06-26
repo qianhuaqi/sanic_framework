@@ -245,3 +245,47 @@ def test_request_context_clears_after_real_sanic_request(tmp_path):
             _ = request.raw
 
     asyncio.run(scenario())
+
+
+def test_request_context_clears_when_response_middleware_fails(tmp_path):
+    raw_app = Sanic("response-middleware-failure")
+    sanic_adapter.set_app_config(
+        raw_app,
+        SimpleNamespace(
+            app_name="response-middleware-failure",
+            debug=False,
+            language="zh-CN",
+            log_level="INFO",
+            log_to_file=False,
+            log_path=str(tmp_path / "logs"),
+            log_file="app.log",
+            log_formatter="%(message)s",
+            log_max_bytes=1024,
+            log_backup_count=1,
+        ),
+    )
+    sanic_adapter.set_app_logger(raw_app, logging.getLogger("response-middleware-failure"))
+    sanic_adapter.install_context_middleware(raw_app)
+
+    @raw_app.middleware("response")
+    async def later_response_middleware(request_, response):
+        assert request.id
+        raise RuntimeError("response middleware failed")
+
+    @raw_app.get("/probe")
+    async def probe(request_):
+        return json_response({"ok": True})
+
+    @raw_app.exception(Exception)
+    async def handle_exception(request_, exception):
+        return json_response(code=990000, msg=str(exception), status=500)
+
+    async def scenario():
+        _, response_ = await raw_app.asgi_client.get("/probe")
+        assert response_.status == 200
+        with pytest.raises(NoRequestContextError):
+            _ = request.raw
+        with pytest.raises(NoRequestContextError):
+            _ = request.id
+
+    asyncio.run(scenario())

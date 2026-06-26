@@ -369,6 +369,46 @@ def test_check_project_detects_forbidden_run_py_internal_import(tmp_path):
     assert any("run.py" in issue and "must not import lingshu.system" in issue for issue in issues)
 
 
+def test_check_project_detects_project_error_code_registry_overlap(tmp_path):
+    _render_project(tmp_path)
+    module_map = tmp_path / "app" / "language" / "modules.ini"
+    module_map.write_text(
+        "[Modules]\n"
+        "990000-990050 = project_system\n",
+        encoding="utf-8",
+    )
+
+    issues = check_project(tmp_path)
+
+    assert any("invalid error-code registry" in issue and "990000-990099" in issue for issue in issues)
+
+
+def test_check_project_detects_project_error_code_registry_internal_overlap(tmp_path):
+    _render_project(tmp_path)
+    module_map = tmp_path / "app" / "language" / "modules.ini"
+    module_map.write_text(
+        "[Modules]\n"
+        "110000-119999 = user\n"
+        "115000-125000 = order\n",
+        encoding="utf-8",
+    )
+
+    issues = check_project(tmp_path)
+
+    assert any("invalid error-code registry" in issue and "Overlapping module ranges" in issue for issue in issues)
+
+
+def test_check_project_rejects_version_language_module_registry(tmp_path):
+    _render_project(tmp_path)
+    add_version("v1", root=tmp_path)
+    version_map = tmp_path / "app" / "v1" / "language" / "modules.ini"
+    version_map.write_text("[Modules]\n120000-129999 = versioned\n", encoding="utf-8")
+
+    issues = check_project(tmp_path)
+
+    assert any("app/v1/language/modules.ini" in issue and "version language modules.ini is forbidden" in issue for issue in issues)
+
+
 def test_check_project_resource_controller_route_contract(tmp_path):
     _render_project(tmp_path)
     add_version("v1", root=tmp_path)

@@ -6,8 +6,13 @@ Generated Sanic MVC API project.
 
 ```powershell
 copy .env.example .env
+python -m pip install -e ".[dev]"
 python run.py
 ```
+
+Run from the project root so `config/defaults.py`, `app/`, and `public/` are discovered correctly.
+
+For PyCharm, set the interpreter to the project's virtual environment and set the working directory to the project root.
 
 ## Add Version
 

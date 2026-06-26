@@ -6,7 +6,7 @@ import pytest
 
 from lingshu.app import create_app
 from lingshu.error_codes import build_error_code_index, parse_error_code_catalog
-from lingshu.exception import get_error_message, language_roots, version_from_path
+from lingshu.exception import get_error_message, language_roots, module_map_paths, version_from_path
 from lingshu.system import sanic_adapter
 
 
@@ -79,6 +79,18 @@ def test_language_roots_do_not_include_legacy_top_level_language(tmp_path, monke
     assert roots[0].endswith("app/v1/language")
     assert roots[1].endswith("app/language")
     assert roots[2].endswith("src/lingshu/language")
+
+
+def test_module_map_paths_merge_project_and_internal_registry(tmp_path, monkeypatch):
+    project_map = tmp_path / "app" / "language" / "modules.ini"
+    project_map.parent.mkdir(parents=True)
+    project_map.write_text("[Modules]\n110000-119999 = user\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    paths = [path.as_posix() for path in module_map_paths()]
+
+    assert project_map.as_posix() in paths
+    assert any(path.endswith("lingshu/resources/error_codes/modules.ini") for path in paths)
 
 
 def test_version_from_path_supports_unified_version_names():

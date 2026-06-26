@@ -3,40 +3,38 @@
 Updated at: 2026-06-25
 Location: office
 Branch: codex/phase-b-lingshu-context
-Local HEAD: f5c9e9d895e715d487ce243f2ccca4849493edb9
-Remote HEAD: f5c9e9d895e715d487ce243f2ccca4849493edb9
 Worktree: clean
-Work commit: f5c9e9d895e715d487ce243f2ccca4849493edb9
-Handoff commit: pending-first-handoff-doc-commit
+Work commit: 08023c9e37785e1cd9cd2092b72eba9ba190b45e
 
 ## Completed
 
-- Phase B rework baseline is pushed to `github/codex/phase-b-lingshu-context`.
-- Cross-device handoff workflow documentation and scripts are being added in a separate governance commit.
+- Cross-device handoff workflow was added and pushed to `github/codex/phase-b-lingshu-context`.
+- Third independent acceptance feedback was read from PR #8.
 
 ## Remaining
 
-- Commit and push the cross-device handoff workflow.
-- Publish a PR `[HANDOFF]` comment after the governance commit is pushed.
-- Wait for Xiao Gu's second independent phase B acceptance.
+- Finish remaining phase B blockers from the third independent acceptance.
+- Make handoff scripts pass real execution tests in temporary Git repositories.
+- Wait for Xiao Gu's fourth independent phase B acceptance after fixes are pushed.
 
 ## Last verification
 
-- pytest: last full suite passed before this governance update on the phase B baseline
-- contract check: passed before this governance update on the phase B baseline
-- build: passed before this governance update on the phase B baseline
-- diff check: passed before this governance update on the phase B baseline
+- pytest: 110 passed on commit 08023c9e37785e1cd9cd2092b72eba9ba190b45e
+- contract check: Project check passed on commit 08023c9e37785e1cd9cd2092b72eba9ba190b45e
+- build: passed on phase B rework baseline before handoff governance update
+- diff check: passed on commit 08023c9e37785e1cd9cd2092b72eba9ba190b45e
 
 ## Known risks
 
-- `Handoff commit` is set by the handoff workflow itself and should be refreshed before an actual computer switch.
+- Work commit is a baseline ancestor, not a self-referential HEAD field.
+- Final remote HEAD must be verified by script output and recorded in the PR `[HANDOFF]` comment.
 - GitHub PR comments remain the required place to confirm the active writer lock.
 
 ## Next exact action
 
-- Run focused handoff workflow tests, commit the governance update, push to `github`, and add a PR `[HANDOFF]` comment.
+- Fix phase B third-round blockers, run full verification, push, then publish a new PR `[HANDOFF]` comment.
 
 ## Current PR
 
 - PR: #8
-- Latest instruction: create a cross-device handoff workflow for phase B without starting phase C.
+- Latest instruction: fix phase B third-round blockers without starting phase C.

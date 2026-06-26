@@ -97,3 +97,12 @@ def install_context_middleware(raw_app):
     @raw_app.middleware("response")
     async def reset_lingshu_context(request, response):
         reset_request_context(request)
+
+    @raw_app.signal("http.lifecycle.response")
+    async def reset_lingshu_context_after_response(request, response, **_):
+        reset_request_context(request)
+
+    @raw_app.signal("http.lifecycle.exception")
+    async def reset_lingshu_context_after_exception(request, exception, **_):
+        if request is not None:
+            reset_request_context(request)

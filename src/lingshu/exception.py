@@ -37,11 +37,6 @@ def module_map_paths(version: str = "") -> list[Path]:
     return [candidate for candidate in candidates if candidate.exists()]
 
 
-def module_map_path(version: str = "") -> Path | None:
-    candidates = module_map_paths(version)
-    return candidates[0] if candidates else None
-
-
 def get_error_message(request, code, default=None) -> str:
     if request is None:
         request = current_request.get()

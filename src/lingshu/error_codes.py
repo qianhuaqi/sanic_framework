@@ -195,6 +195,34 @@ def parse_module_ranges_from_paths(module_map_paths: str | Path | Iterable[str |
     return ranges
 
 
+def validate_module_registry(project_root: str | Path) -> list[str]:
+    root = Path(project_root)
+    issues: list[str] = []
+    internal_map = Path(__file__).with_name("resources") / "error_codes" / "modules.ini"
+    project_map = root / "app" / "language" / "modules.ini"
+    map_paths = [internal_map]
+
+    if not internal_map.exists():
+        issues.append(f"{internal_map.as_posix()}: internal error-code registry is missing")
+    if project_map.exists():
+        map_paths.append(project_map)
+
+    for version_map in sorted((root / "app").glob("*/language/modules.ini")):
+        if version_map == project_map:
+            continue
+        issues.append(
+            f"{version_map.relative_to(root).as_posix()}: version language modules.ini is forbidden; "
+            "error-code ranges belong to app/language/modules.ini"
+        )
+
+    try:
+        parse_module_ranges_from_paths(map_paths)
+    except (FileNotFoundError, ValueError) as exc:
+        issues.append(f"app/language/modules.ini: invalid error-code registry: {exc}")
+
+    return issues
+
+
 def _resolve_module_range(code: int, module_ranges: list[ModuleRange]) -> ModuleRange:
     for module_range in module_ranges:
         if module_range.contains(code):
