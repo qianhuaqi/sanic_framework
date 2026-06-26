@@ -4,13 +4,13 @@ import asyncio
 import contextvars
 import time
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from uuid import uuid4
 
 from lingshu.system.errors import NoRequestContextError
 
 
-class CancellationReason(StrEnum):
+class CancellationReason(str, Enum):
     CLIENT_DISCONNECT = "client_disconnect"
     REQUEST_TIMEOUT = "request_timeout"
     PARENT_FAILURE = "parent_failure"

@@ -4,12 +4,12 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 
 from lingshu.response import json_response
 
 
-class LifecycleState(StrEnum):
+class LifecycleState(str, Enum):
     STARTING = "starting"
     READY = "ready"
     DRAINING = "draining"
