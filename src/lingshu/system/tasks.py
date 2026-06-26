@@ -13,9 +13,24 @@ from lingshu.system.errors import NoRequestContextError
 
 _MAX_RESULT_STR_LEN = 200
 _MAX_EXC_MSG_LEN = 500
+
+# Match sensitive data in various formats:
+#   password=secret  password: secret  password = "secret"
+#   Authorization: Bearer abc123
+#   Authorization: Basic abc123
+#   access-key: abc123
+#   {"token":"abc123"}  {'token': 'abc123'}
 _SENSITIVE_PATTERN = re.compile(
-    r"(?i)(password|passwd|token|secret|authorization|api[_-]?key|access[_-]?key)"
-    r"\s*[:=]\s*\S+"
+    r"""(?xi)
+    (?P<key>password|passwd|token|secret|authorization|api[_-]?key|access[_-]?key)
+    \s*[:=]\s*
+    (?P<quote>["']?)
+    (?P<value>
+        (?:Bearer|Basic)\s+\S+
+        |
+        [^"'\s,}]+
+    )
+    """,
 )
 
 
@@ -25,11 +40,15 @@ def _truncate(value: str, limit: int) -> str:
     return value[:limit] + "...[truncated]"
 
 
+def _redact_match(match: re.Match) -> str:
+    key = match.group("key")
+    quote = match.group("quote")
+    return f"{key}={quote}***{quote}"
+
+
 def _sanitize_text(value: str) -> str:
-    return _SENSITIVE_PATTERN.sub(
-        lambda m: m.group(1) + "=***",
-        value,
-    )
+    redacted = _SENSITIVE_PATTERN.sub(_redact_match, value)
+    return _truncate(redacted, _MAX_EXC_MSG_LEN)
 
 
 def _summarize_result(value):
@@ -47,7 +66,7 @@ def _summarize_result(value):
 def _summarize_exception(exc: BaseException) -> tuple[str, str]:
     exc_type = type(exc).__name__
     raw_msg = str(exc) or repr(exc)
-    safe_msg = _truncate(_sanitize_text(raw_msg), _MAX_EXC_MSG_LEN)
+    safe_msg = _sanitize_text(raw_msg)
     return exc_type, safe_msg
 
 
@@ -141,7 +160,10 @@ class TaskRegistry:
         if scope in {"application", "operation"}:
             task_context = contextvars.Context()
 
-        task = asyncio.create_task(coro, name=name, context=task_context)
+        if task_context is None:
+            task = asyncio.create_task(coro, name=name)
+        else:
+            task = task_context.run(asyncio.create_task, coro, name=name)
         record = TaskRecord(
             id=task_id,
             name=name,
