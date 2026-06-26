@@ -3,8 +3,8 @@
 Project: LingShu Framework
 Current phase: C0 - global framework research convergence
 Current branch: research/phase-c0-global-frameworks
-Current PR: pending
-Status: research convergence ready for review
+Current PR: #11
+Status: research convergence under independent review
 Next runtime phase allowed: no
 
 ## Accepted Baseline
@@ -47,11 +47,11 @@ extensions/DI/events/audit/observability/testing
 ## Current Prohibitions
 
 - Do not modify LingShu runtime code in the C0 research branch.
-- Do not start Phase C1 before the C0 research PR is independently reviewed and merged.
+- Do not start Phase C1 before PR #11 is independently reviewed, accepted, and merged.
 - Do not combine C1 security/lifecycle implementation with database, Redis, MongoDB, OpenAPI, or extension runtime work.
 - Do not create one giant Phase C-F implementation PR.
 - Do not silently move extension/later capabilities into the core.
-- Do not merge the research PR without independent validation.
+- Do not merge PR #11 without independent validation.
 - Do not commit secrets, local personal paths, network addresses, or private credentials.
 - Do not add business-code imports from `lingshu.system`.
 
@@ -85,4 +85,4 @@ C1 must not implement JWT, HMAC signing, Redis, ORM, MongoDB, OpenAPI generation
 ## Branch And PR
 
 - Branch: `research/phase-c0-global-frameworks`
-- Pull request: pending creation
+- Pull request: `#11`
