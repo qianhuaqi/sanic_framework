@@ -12,7 +12,7 @@ from lingshu.lifecycle import register_lifecycle
 from lingshu.logging import setup_logging
 from lingshu.middleware_registry import register_middleware
 from lingshu.response import json_response
-from lingshu.router import register_blueprints
+from lingshu.router import compile_route_policies, register_blueprints
 from lingshu.system import sanic_adapter
 from lingshu.runtime import run_app
 
@@ -55,10 +55,14 @@ def create_app():
     setup_logging(app)
     register_middleware(app)
     sanic_adapter.install_context_middleware(app)
-    register_lifecycle(app, _get_project_extension_modules())
 
     register_blueprints(app, _get_project_blueprints(config))
+    register_lifecycle(app, _get_project_extension_modules())
     _register_public_static(app)
+    compile_route_policies(app)
+    lifecycle = getattr(app.ctx, "lifecycle", None)
+    if lifecycle is not None and lifecycle.state.value == "starting":
+        lifecycle.mark_ready()
 
     @app.exception(APIException)
     async def handle_api_exception(request, exception):

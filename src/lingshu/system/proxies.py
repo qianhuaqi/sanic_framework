@@ -4,6 +4,7 @@ import logging
 from types import MappingProxyType
 
 from lingshu.system.context import current_request_id, current_user, get_current_app, get_current_request
+from lingshu.system.execution import current_execution_context
 from lingshu.system.errors import NoAppContextError, NoRequestContextError, ResourceNotConfiguredError
 from lingshu.system.sanic_adapter import get_app_config, get_app_logger, get_optional_resource, get_resource
 
@@ -55,12 +56,19 @@ class AppProxy:
 
 class RequestProxy:
     @property
+    def execution(self):
+        return current_execution_context()
+
+    @property
     def raw(self):
         return get_current_request()
 
     @property
     def id(self):
-        get_current_request()
+        try:
+            get_current_request()
+        except NoRequestContextError:
+            return current_execution_context().request_id
         request_id = current_request_id.get()
         if request_id is None:
             raise NoRequestContextError("No LingShu request context is active")
