@@ -14,16 +14,15 @@ Next phase allowed: no
 ## Remaining Blockers
 
 - Third independent acceptance did not pass.
-- Finish the remaining phase B technical blockers: error-code registry contract check, empty generated project registry, request lifecycle finalizer, local setup script, run.py installation hint, and local development docs.
-- Fix the cross-device handoff workflow so it has no SHA self-reference and passes real PowerShell execution tests.
+- Local rework for third-round blockers has been completed and pushed in this branch.
+- Await Xiao Gu's fourth independent acceptance.
 - Do not treat local Codex chat state as evidence; use PR #8 comments, remote branch state, and this repository documentation.
 
 ## Latest Xiao Gu Acceptance
 
 - Latest recorded conclusion: phase B third independent acceptance did not pass.
-- The previous technical blockers and the handoff workflow blockers must be completed together.
-- Handoff documents must not use pending placeholders or self-referential HEAD requirements.
-- Current rework status: in progress on branch `codex/phase-b-lingshu-context`.
+- Third-round rework status: completed locally; waiting for fourth independent validation.
+- Handoff documents now use `Work commit` as an ancestor baseline and do not require self-referential HEAD fields.
 
 ## Current Prohibitions
 
