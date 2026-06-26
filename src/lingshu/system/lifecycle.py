@@ -269,7 +269,7 @@ class ShutdownCoordinator:
             except TimeoutError as exc:
                 timed_out = True
                 errors.append(exc)
-                break
+                continue
             except Exception as exc:
                 errors.append(exc)
         self.lifecycle.mark_stopped()

@@ -5,6 +5,7 @@ import contextvars
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
+from uuid import uuid4
 
 from lingshu.system.errors import NoRequestContextError
 
@@ -56,10 +57,15 @@ class RequestExecutionContext:
     route_policy: object
     deadline: float
     lifecycle_state: str
+    execution_id: str = ""
     operation_id: str | None = None
     cancel_reason: CancellationReason | None = None
     monotonic: object = time.monotonic
     extensions: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.execution_id:
+            self.execution_id = uuid4().hex
 
     @classmethod
     def child(
@@ -72,6 +78,7 @@ class RequestExecutionContext:
         lifecycle_state: str,
         monotonic=time.monotonic,
         operation_id: str | None = None,
+        execution_id: str | None = None,
     ) -> "RequestExecutionContext":
         now = monotonic()
         child_deadline = now + timeout
@@ -84,6 +91,7 @@ class RequestExecutionContext:
             route_policy=route_policy,
             deadline=child_deadline,
             lifecycle_state=lifecycle_state,
+            execution_id=execution_id or uuid4().hex,
             operation_id=operation_id,
             monotonic=monotonic,
         )
@@ -104,6 +112,7 @@ class RequestExecutionContext:
 
     def snapshot(self):
         return {
+            "execution_id": self.execution_id,
             "request_id": self.request_id,
             "trace_id": self.trace_id,
             "operation_id": self.operation_id,

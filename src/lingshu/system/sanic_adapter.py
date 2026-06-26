@@ -5,7 +5,11 @@ from uuid import uuid4
 
 from lingshu.response import json_response
 from lingshu.system.context import bind_request_context
-from lingshu.system.execution import RequestExecutionContext, bind_execution_context
+from lingshu.system.execution import (
+    CancellationReason,
+    RequestExecutionContext,
+    bind_execution_context,
+)
 from lingshu.system.errors import ResourceNotConfiguredError
 from lingshu.system.policy import CompiledRoutePolicy
 
@@ -103,43 +107,93 @@ def reset_request_context(raw_request):
         setattr(ctx, "lingshu_execution_context", None)
 
 
-async def finish_request_context(raw_request):
+_REQUEST_TASK_CLEANUP_BUDGET = 2.0
+_REQUEST_TASK_CLEANUP_MIN = 0.5
+
+
+def _cleanup_budget(execution_context) -> float:
+    remaining = max(0.0, execution_context.remaining)
+    return max(_REQUEST_TASK_CLEANUP_MIN, min(_REQUEST_TASK_CLEANUP_BUDGET, remaining))
+
+
+async def finalize_request_context(raw_request, *, reason=None):
+    """Idempotent, unconditional request finalizer.
+
+    Ensures in-flight tracker release and context reset happen regardless of
+    whether task cleanup succeeds, fails, or times out.
+    """
     ctx = getattr(raw_request, "ctx", None)
+    if ctx is None or getattr(ctx, "lingshu_finalized", False):
+        return
+    setattr(ctx, "lingshu_finalized", True)
+
     execution_context = get_request_execution_context(raw_request)
-    if execution_context is not None:
-        registry = getattr(raw_request.app.ctx, "task_registry", None)
-        if registry is not None:
-            await registry.finish_request(execution_context.request_id, timeout=max(0.0, execution_context.remaining))
-    if ctx is not None and getattr(ctx, "lingshu_in_flight_entered", False):
-        tracker = getattr(raw_request.app.ctx, "in_flight_tracker", None)
-        if tracker is not None:
-            tracker.exit()
-        setattr(ctx, "lingshu_in_flight_entered", False)
-    reset_request_context(raw_request)
+
+    if execution_context is not None and reason is not None and execution_context.cancel_reason is None:
+        execution_context.cancel(reason)
+
+    cleanup_errors = []
+
+    try:
+        if execution_context is not None:
+            registry = getattr(raw_request.app.ctx, "task_registry", None)
+            if registry is not None:
+                budget = _cleanup_budget(execution_context)
+                await registry.finish_request(execution_context.execution_id, timeout=budget)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        cleanup_errors.append(exc)
+        logger = get_optional_resource(raw_request.app, "logger")
+        if logger is not None:
+            logger.debug("Request task cleanup error: %s", exc)
+    finally:
+        if ctx is not None and getattr(ctx, "lingshu_in_flight_entered", False):
+            tracker = getattr(raw_request.app.ctx, "in_flight_tracker", None)
+            if tracker is not None:
+                try:
+                    tracker.exit()
+                except Exception:
+                    pass
+            setattr(ctx, "lingshu_in_flight_entered", False)
+        reset_request_context(raw_request)
+
+
+async def finish_request_context(raw_request):
+    await finalize_request_context(raw_request)
 
 
 def detach_request_context_after_task(raw_request):
-    context = get_request_context(raw_request)
+    """Synchronous last-resort leak prevention.
+
+    Only detaches references; never resets ContextVar tokens since the owning
+    task context may be gone.  All async cleanup is handled by the finalizer.
+    """
     ctx = getattr(raw_request, "ctx", None)
-    if context is None:
-        if ctx is not None:
-            token = getattr(ctx, "lingshu_execution_token", None)
-            if token is not None:
-                token.detach_after_task()
-            setattr(ctx, "lingshu_execution_context", None)
-            setattr(ctx, "lingshu_execution_token", None)
+    if ctx is None:
         return
-    # A done callback may run after cancellation/disconnect, when the owning
-    # asyncio task context is gone. Do not reset ContextVar tokens there;
-    # just detach request references so the completed task does not retain them.
-    context.detach_after_task()
-    if ctx is not None:
-        token = getattr(ctx, "lingshu_execution_token", None)
-        if token is not None:
-            token.detach_after_task()
-        setattr(ctx, "lingshu_context", None)
-        setattr(ctx, "lingshu_execution_context", None)
-        setattr(ctx, "lingshu_execution_token", None)
+    if getattr(ctx, "lingshu_finalized", False):
+        return
+    setattr(ctx, "lingshu_finalized", True)
+
+    if getattr(ctx, "lingshu_in_flight_entered", False):
+        tracker = getattr(raw_request.app.ctx, "in_flight_tracker", None)
+        if tracker is not None:
+            try:
+                tracker.exit()
+            except Exception:
+                pass
+        setattr(ctx, "lingshu_in_flight_entered", False)
+
+    context = get_request_context(raw_request)
+    if context is not None:
+        context.detach_after_task()
+    token = getattr(ctx, "lingshu_execution_token", None)
+    if token is not None:
+        token.detach_after_task()
+    setattr(ctx, "lingshu_context", None)
+    setattr(ctx, "lingshu_execution_context", None)
+    setattr(ctx, "lingshu_execution_token", None)
 
 
 def _request_route_name(raw_app, request):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from functools import wraps
 from types import MappingProxyType
 from typing import Any
 
@@ -153,21 +154,32 @@ class RoutePolicyCompiler:
         if getattr(handler, "__lingshu_deadline_wrapped__", False):
             return
 
+        @wraps(handler)
         async def deadline_wrapper(request, *args, **kwargs):
+            from lingshu.system.sanic_adapter import finalize_request_context
+
             execution = current_execution_context()
             try:
-                return await asyncio.wait_for(handler(request, *args, **kwargs), timeout=execution.remaining)
+                async with asyncio.timeout_at(execution.deadline):
+                    return await handler(request, *args, **kwargs)
             except TimeoutError:
-                execution.cancel(CancellationReason.REQUEST_TIMEOUT)
-                return json_response(
-                    {"request_id": execution.request_id},
-                    code=990002,
-                    msg="Request deadline exceeded",
-                    status=504,
-                )
+                now = execution.monotonic()
+                if now >= execution.deadline:
+                    execution.cancel(CancellationReason.REQUEST_TIMEOUT)
+                    return json_response(
+                        {"request_id": execution.request_id},
+                        code=990002,
+                        msg="Request deadline exceeded",
+                        status=504,
+                    )
+                raise
+            except asyncio.CancelledError:
+                if execution.cancel_reason is None:
+                    execution.cancel(CancellationReason.CLIENT_DISCONNECT)
+                raise
+            finally:
+                await finalize_request_context(request)
 
-        deadline_wrapper.__name__ = getattr(handler, "__name__", "deadline_wrapper")
-        deadline_wrapper.__module__ = getattr(handler, "__module__", __name__)
         deadline_wrapper.__lingshu_deadline_wrapped__ = True
         deadline_wrapper.__lingshu_route_policy__ = getattr(handler, "__lingshu_route_policy__", None)
         deadline_wrapper.__lingshu_compiled_policy__ = compiled

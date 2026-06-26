@@ -21,6 +21,7 @@ def register_lifecycle(app, extension_modules=None):
             in_flight_tracker=app.ctx.in_flight_tracker,
             task_registry=app.ctx.task_registry,
         )
+        setattr(app.ctx, "lingshu_teardown_registered", False)
 
     new_shutdown_coordinator()
     install_health_routes(app, lifecycle)
@@ -42,15 +43,26 @@ def register_lifecycle(app, extension_modules=None):
             lifecycle.mark_ready()
 
     async def teardown_extensions(app):
-        app.ctx.shutdown_coordinator.add_cleanup(lambda: teardown_enabled_extensions(app, extension_modules))
+        if not getattr(app.ctx, "lingshu_teardown_registered", False):
+            app.ctx.shutdown_coordinator.add_cleanup(lambda: teardown_enabled_extensions(app, extension_modules))
+            setattr(app.ctx, "lingshu_teardown_registered", True)
         await app.ctx.shutdown_coordinator.shutdown()
+
+    async def before_server_stop_teardown(app):
+        await teardown_extensions(app)
+
+    async def after_server_stop_fallback(app):
+        coordinator = getattr(app.ctx, "shutdown_coordinator", None)
+        if coordinator is not None:
+            await coordinator.shutdown()
 
     app.ctx.lingshu_startup_listeners = tuple(
         list(getattr(app.ctx, "lingshu_startup_listeners", ())) + [setup_extensions],
     )
     app.ctx.lingshu_stop_listeners = tuple(
-        list(getattr(app.ctx, "lingshu_stop_listeners", ())) + [teardown_extensions],
+        list(getattr(app.ctx, "lingshu_stop_listeners", ())) + [before_server_stop_teardown],
     )
 
     app.listener("before_server_start")(setup_extensions)
-    app.listener("after_server_stop")(teardown_extensions)
+    app.listener("before_server_stop")(before_server_stop_teardown)
+    app.listener("after_server_stop")(after_server_stop_fallback)

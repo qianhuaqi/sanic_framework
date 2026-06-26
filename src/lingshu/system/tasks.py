@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -9,6 +10,45 @@ from itertools import count
 
 from lingshu.system.execution import current_execution_context
 from lingshu.system.errors import NoRequestContextError
+
+_MAX_RESULT_STR_LEN = 200
+_MAX_EXC_MSG_LEN = 500
+_SENSITIVE_PATTERN = re.compile(
+    r"(?i)(password|passwd|token|secret|authorization|api[_-]?key|access[_-]?key)"
+    r"\s*[:=]\s*\S+"
+)
+
+
+def _truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "...[truncated]"
+
+
+def _sanitize_text(value: str) -> str:
+    return _SENSITIVE_PATTERN.sub(
+        lambda m: m.group(1) + "=***",
+        value,
+    )
+
+
+def _summarize_result(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        return _truncate(value, _MAX_RESULT_STR_LEN)
+    return f"<{type(value).__name__}>"
+
+
+def _summarize_exception(exc: BaseException) -> tuple[str, str]:
+    exc_type = type(exc).__name__
+    raw_msg = str(exc) or repr(exc)
+    safe_msg = _truncate(_sanitize_text(raw_msg), _MAX_EXC_MSG_LEN)
+    return exc_type, safe_msg
 
 
 @dataclass
@@ -21,6 +61,7 @@ class TaskRecord:
     state: str
     shutdown_policy: str
     task: asyncio.Task | None
+    execution_id: str | None = None
     request_id: str | None = None
     trace_id: str | None = None
     operation_id: str | None = None
@@ -80,11 +121,12 @@ class TaskRegistry:
             raise RuntimeError("TaskRegistry is closed")
 
         task_id = f"task-{next(self._counter)}"
-        request_id = trace_id = operation_id = None
+        execution_id = request_id = trace_id = operation_id = None
         deadline = None
         task_context = None
         try:
             execution = current_execution_context()
+            execution_id = execution.execution_id
             request_id = execution.request_id
             trace_id = execution.trace_id
             operation_id = execution.operation_id
@@ -109,6 +151,7 @@ class TaskRegistry:
             state="running",
             shutdown_policy=shutdown_policy,
             task=task,
+            execution_id=execution_id,
             request_id=request_id,
             trace_id=trace_id,
             operation_id=operation_id,
@@ -124,16 +167,13 @@ class TaskRegistry:
             return
         try:
             result = task.result()
-            if result is None or isinstance(result, (str, int, float, bool)):
-                record.result = result
+            record.result = _summarize_result(result)
             record.state = "done"
         except asyncio.CancelledError as exc:
-            record.exception_type = type(exc).__name__
-            record.exception_message = str(exc)
+            record.exception_type, record.exception_message = _summarize_exception(exc)
             record.state = "cancelled"
         except BaseException as exc:  # task exception must be consumed
-            record.exception_type = type(exc).__name__
-            record.exception_message = str(exc)
+            record.exception_type, record.exception_message = _summarize_exception(exc)
             record.state = "failed"
         record.task = None
         self._remember(record)
@@ -174,11 +214,11 @@ class TaskRegistry:
             return_exceptions=True,
         )
 
-    async def finish_request(self, request_id: str, timeout: float):
+    async def finish_request(self, execution_id: str, timeout: float):
         tasks = [
             record.task
             for record in self._records.values()
-            if record.scope == "request" and record.request_id == request_id and record.task is not None
+            if record.scope == "request" and record.execution_id == execution_id and record.task is not None
         ]
         for task in tasks:
             task.cancel()
