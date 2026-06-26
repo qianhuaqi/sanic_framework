@@ -32,19 +32,19 @@ Work commit: cfb4847ae84efe7b7d1e3bfdb2d592608ef3a671
 - cancellation cleanup: `tests\test_context_facade.py::test_request_context_clears_when_handler_task_is_cancelled` passed
 - generated-project install smoke: `tests\test_init_project.py::test_initialized_project_editable_install_in_fresh_venv_without_pythonpath` passed with no `PYTHONPATH`
 - wheel smoke: passed import, CLI, command absence, and wheel-content checks for language, registry, manifest, scaffold, and no `framework` package
-- verify handoff: to be rerun after this handoff document update
-- resume handoff: to be rerun after this handoff document update
+- verify handoff: exited 0 and printed `Handoff verification passed`
+- resume handoff: temporary clone exited 0 and printed current HEAD plus HANDOFF
 - run.py smoke: missing-install environment printed the editable install hint
 
 ## Known risks
 
 - GitHub has no CI configured; evidence is from local and temporary-venv verification.
 - Direct `.ps1` execution is blocked by local execution policy; smoke uses `powershell -NoProfile -ExecutionPolicy Bypass`.
-- Final remote HEAD must be recorded in the PR `[HANDOFF]` comment after this handoff document commit is pushed.
+- Final remote HEAD must be recorded in the PR `[HANDOFF]` comment after this handoff verification document commit is pushed.
 
 ## Next exact action
 
-- Run final handoff/resume verification, publish the final PR `[HANDOFF]` comment, and wait for Xiao Gu's fifth independent phase B acceptance.
+- Publish the final PR `[HANDOFF]` comment and wait for Xiao Gu's fifth independent phase B acceptance.
 
 ## Current PR
 
