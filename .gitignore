@@ -10,3 +10,7 @@ __pycache__/
 *.log
 config/common_no.py
 runtime/
+dist/
+build/
+*.egg-info/
+.tmp-lingshu-wheel/

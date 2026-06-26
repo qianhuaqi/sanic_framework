@@ -1,10 +1,10 @@
 from sanic import Blueprint
 
-from framework.error_codes import build_error_code_index, normalize_locale_name
-from framework.exception import language_roots, module_map_path, raise_code
-from framework.response import json_response
-from framework.router import RoutePolicy, set_blueprint_policy
-from framework.versioning import normalize_version
+from lingshu.error_codes import build_error_code_index, normalize_locale_name
+from lingshu.exception import language_roots, module_map_paths, raise_code
+from lingshu.response import json_response
+from lingshu.router import RoutePolicy, set_blueprint_policy
+from lingshu.versioning import normalize_version
 
 
 bp = Blueprint("meta", url_prefix="/meta")
@@ -26,7 +26,7 @@ async def error_codes(request):
             version = normalize_version(version)
         except ValueError:
             raise_code(request, 991112, status_code=400)
-    index = build_error_code_index(language_roots(version), module_map_path=module_map_path(version))
+    index = build_error_code_index(language_roots(version), module_map_path=module_map_paths(version))
 
     code_filter = request.args.get("code", "").strip()
     module_filter = request.args.get("module", "").strip().lower()
@@ -72,7 +72,7 @@ async def error_codes(request):
         }
         if module_items:
             modules.append(payload)
-        elif not has_filters:
+        elif not has_filters and bucket.get("reserved"):
             reserved.append(payload)
 
     return json_response(

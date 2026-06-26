@@ -1,6 +1,6 @@
 import pytest
 
-from framework.config import AppConfig, load_config, parse_bool, parse_csv, parse_host_port
+from lingshu.config import AppConfig, load_config, parse_bool, parse_csv, parse_host_port
 
 
 def test_parse_bool_accepts_common_values():

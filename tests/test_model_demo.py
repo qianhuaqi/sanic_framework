@@ -4,7 +4,11 @@ import pytest
 
 from app.v1.model.table.catalog import CatalogModel
 from app.v1.model.table.orders import OrderModel
-from framework.model.business import BusinessModel
+from lingshu.model.model import Model
+from lingshu.model.business import BusinessModel
+from lingshu.system.context import app_context
+from lingshu.system import sanic_adapter
+from lingshu.system.errors import NoAppContextError
 
 
 class FakeRedis:
@@ -56,35 +60,29 @@ class FakeMySQL:
         return 1
 
 
-class FakeAppCtx:
-    def __init__(self, mysql, redis):
-        self.mysql = mysql
-        self.redis = redis
-
-
 class FakeApp:
-    def __init__(self, mysql, redis):
-        self.ctx = FakeAppCtx(mysql, redis)
+    def __init__(self):
+        from types import SimpleNamespace
 
-
-class FakeRequest:
-    def __init__(self, mysql, redis):
-        self.app = FakeApp(mysql, redis)
+        self.ctx = SimpleNamespace()
 
 
 def test_legacy_model_demo_keeps_old_style_and_master_default():
     async def scenario():
         mysql = FakeMySQL()
         redis = FakeRedis()
-        request = FakeRequest(mysql, redis)
+        app = FakeApp()
+        sanic_adapter.set_resource(app, "mysql", mysql)
+        sanic_adapter.set_resource(app, "redis", redis)
 
-        order = OrderModel(request)
-        catalog = CatalogModel(request)
+        with app_context(app):
+            order = OrderModel()
+            catalog = CatalogModel()
 
-        order_row = await order.get_one(1001)
-        catalog_rows = await catalog.get_all()
-        inserted = await order.insert(id=1001, amount=12.5)
-        updated = await order.update(1001, amount=18.0)
+            order_row = await order.get_one(1001)
+            catalog_rows = await catalog.get_all()
+            inserted = await order.insert(id=1001, amount=12.5)
+            updated = await order.update(1001, amount=18.0)
 
         assert order_row["name"] == "master-order"
         assert catalog_rows[0]["name"] == "slave"
@@ -106,3 +104,14 @@ def test_legacy_model_demo_keeps_old_style_and_master_default():
 def test_business_model_rejects_table_name():
     with pytest.raises(TypeError, match="must not declare table_name"):
         type("InvalidBusinessModel", (BusinessModel,), {"table_name": "demo"})
+
+
+def test_model_request_requires_app_context_but_not_http_request():
+    model = Model()
+
+    with pytest.raises(NoAppContextError):
+        _ = model.request
+
+    app = FakeApp()
+    with app_context(app):
+        assert model.request is None

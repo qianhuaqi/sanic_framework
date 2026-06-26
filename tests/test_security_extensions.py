@@ -1,6 +1,6 @@
-from framework.extensions.auth import token_required
-from framework.extensions.maintenance import maintenance_required
-from framework.extensions.signing import signing_required
+from lingshu.extensions.auth import token_required
+from lingshu.extensions.maintenance import maintenance_required
+from lingshu.extensions.signing import signing_required
 
 
 def test_security_extension_decorators_are_callable():

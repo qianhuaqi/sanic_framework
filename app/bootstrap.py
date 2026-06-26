@@ -1,5 +1,5 @@
 def get_extension_modules():
-    from framework.extensions import mongo, mysql, redis
+    from lingshu.extensions import mongo, mysql, redis
 
     return [mysql, redis, mongo]
 

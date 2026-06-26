@@ -1,4 +1,4 @@
-from framework.router import RoutePolicy, get_blueprint_policy
+from lingshu.router import RoutePolicy, get_blueprint_policy
 from app.controller.health import bp
 
 

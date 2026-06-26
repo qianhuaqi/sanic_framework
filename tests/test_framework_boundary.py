@@ -13,9 +13,9 @@ def _imported_roots(node):
     return []
 
 
-def test_framework_does_not_import_project_code():
+def test_lingshu_does_not_import_project_code():
     violations = []
-    for path in sorted((ROOT / "framework").rglob("*.py")):
+    for path in sorted((ROOT / "src" / "lingshu").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             for root in _imported_roots(node):

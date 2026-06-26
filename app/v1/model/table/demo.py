@@ -1,4 +1,4 @@
-from framework.model.model import Model
+from lingshu.model.model import Model
 
 
 class DemoModel(Model):

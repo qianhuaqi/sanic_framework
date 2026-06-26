@@ -5,9 +5,9 @@ import json
 import pytest
 from sanic import Blueprint
 
-from framework.app import create_app
-from framework.exception import APIException
-from framework.response import json_response
+from lingshu.app import create_app
+from lingshu.exception import APIException
+from lingshu.response import json_response
 
 
 def _body(response):
@@ -63,7 +63,7 @@ def test_api_exception_rejects_legacy_keyword_arguments():
 
 def test_legacy_middleware_api_exception_module_is_removed():
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("framework.middleware.api_exception")
+        importlib.import_module("lingshu.middleware.api_exception")
 
 
 def test_api_exception_response_uses_code_msg_data_shape():

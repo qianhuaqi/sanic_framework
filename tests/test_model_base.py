@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from framework.model.base import BaseModel
+from lingshu.model.base import BaseModel
 
 
 class FakeDB:

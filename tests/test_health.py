@@ -1,6 +1,6 @@
 import asyncio
 
-from framework.app import create_app
+from lingshu.app import create_app
 
 
 def test_health_endpoint_without_databases():
