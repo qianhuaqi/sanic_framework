@@ -32,8 +32,8 @@ Work commit: cfb4847ae84efe7b7d1e3bfdb2d592608ef3a671
 - cancellation cleanup: `tests\test_context_facade.py::test_request_context_clears_when_handler_task_is_cancelled` passed
 - generated-project install smoke: `tests\test_init_project.py::test_initialized_project_editable_install_in_fresh_venv_without_pythonpath` passed with no `PYTHONPATH`
 - wheel smoke: passed import, CLI, command absence, and wheel-content checks for language, registry, manifest, scaffold, and no `framework` package
-- verify handoff: pending final handoff document commit
-- resume handoff: pending final handoff document commit
+- verify handoff: to be rerun after this handoff document update
+- resume handoff: to be rerun after this handoff document update
 - run.py smoke: missing-install environment printed the editable install hint
 
 ## Known risks
