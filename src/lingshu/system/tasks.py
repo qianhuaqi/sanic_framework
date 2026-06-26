@@ -23,7 +23,8 @@ _MAX_EXC_MSG_LEN = 500
 _SENSITIVE_PATTERN = re.compile(
     r"""(?xi)
     (?P<key>password|passwd|token|secret|authorization|api[_-]?key|access[_-]?key)
-    \s*[:=]\s*
+    \s*
+    ["']?\s*[:=]\s*
     (?P<quote>["']?)
     (?P<value>
         (?:Bearer|Basic)\s+\S+
