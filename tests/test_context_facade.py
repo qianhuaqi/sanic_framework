@@ -289,3 +289,43 @@ def test_request_context_clears_when_response_middleware_fails(tmp_path):
             _ = request.id
 
     asyncio.run(scenario())
+
+
+def test_request_context_clears_when_handler_task_is_cancelled(tmp_path):
+    raw_app = Sanic("cancelled-request")
+    sanic_adapter.set_app_config(
+        raw_app,
+        SimpleNamespace(
+            app_name="cancelled-request",
+            debug=False,
+            language="zh-CN",
+            log_level="INFO",
+            log_to_file=False,
+            log_path=str(tmp_path / "logs"),
+            log_file="app.log",
+            log_formatter="%(message)s",
+            log_max_bytes=1024,
+            log_backup_count=1,
+        ),
+    )
+    sanic_adapter.set_app_logger(raw_app, logging.getLogger("cancelled-request"))
+    sanic_adapter.install_context_middleware(raw_app)
+
+    @raw_app.get("/cancel")
+    async def cancel(request_):
+        assert request.id
+        raise asyncio.CancelledError()
+
+    async def scenario():
+        task = asyncio.create_task(raw_app.asgi_client.get("/cancel"))
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await asyncio.sleep(0)
+        with pytest.raises(NoRequestContextError):
+            _ = request.raw
+        with pytest.raises(NoRequestContextError):
+            _ = request.id
+
+    asyncio.run(scenario())

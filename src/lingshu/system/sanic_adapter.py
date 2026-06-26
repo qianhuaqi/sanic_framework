@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextvars
 from uuid import uuid4
 
 from lingshu.system.context import bind_request_context
@@ -93,6 +95,14 @@ def install_context_middleware(raw_app):
             user=get_request_user(request),
         )
         request.ctx.lingshu_context = context
+        task = asyncio.current_task()
+        if task is not None:
+            # Covers cancellation/disconnect paths that do not produce a response
+            # and may bypass Sanic's ordinary exception lifecycle.
+            task.add_done_callback(
+                lambda _task, raw_request=request: reset_request_context(raw_request),
+                context=contextvars.copy_context(),
+            )
 
     @raw_app.middleware("response")
     async def reset_lingshu_context(request, response):

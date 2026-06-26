@@ -14,6 +14,13 @@ current_request_id: ContextVar[str | None] = ContextVar("lingshu_current_request
 current_user: ContextVar[object | None] = ContextVar("lingshu_current_user", default=None)
 
 
+def _reset_or_clear(variable: ContextVar, token):
+    try:
+        variable.reset(token)
+    except ValueError:
+        variable.set(None)
+
+
 @dataclass
 class _ContextTokens:
     app_token: object | None = None
@@ -37,13 +44,13 @@ class _ContextTokens:
         if not self.entered or self.reset_done:
             return
         if self.user_token is not None:
-            current_user.reset(self.user_token)
+            _reset_or_clear(current_user, self.user_token)
         if self.request_id_token is not None:
-            current_request_id.reset(self.request_id_token)
+            _reset_or_clear(current_request_id, self.request_id_token)
         if self.request_token is not None:
-            current_request.reset(self.request_token)
+            _reset_or_clear(current_request, self.request_token)
         if self.app_token is not None:
-            current_app.reset(self.app_token)
+            _reset_or_clear(current_app, self.app_token)
         self.reset_done = True
 
 

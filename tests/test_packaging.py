@@ -31,6 +31,7 @@ def test_pyproject_packages_lingshu_scaffold_templates():
     assert "resources/error_codes/modules.ini" in package_data
     assert "language/**/*.ini" in package_data
     assert "scaffold/*.j2" in package_data
+    assert (SCAFFOLD_DIR / "pyproject.toml.j2").exists()
     assert (SCAFFOLD_DIR / "env.example.j2").exists()
     assert (SCAFFOLD_DIR / "README.md.j2").exists()
     assert (SCAFFOLD_DIR / "docker-compose.yml.j2").exists()

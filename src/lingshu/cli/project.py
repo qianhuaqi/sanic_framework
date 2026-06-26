@@ -12,6 +12,7 @@ from lingshu.versioning import normalize_version
 
 SCAFFOLD_DIR = Path(__file__).resolve().parents[1] / "scaffold"
 REQUIRED_FILES = [
+    "pyproject.toml",
     "run.py",
     ".env.example",
     "README.md",
@@ -82,6 +83,7 @@ def render_project_files(target_dir: Path, options: ProjectOptions):
         ".env.example": "env.example.j2",
         "README.md": "README.md.j2",
         "docker-compose.yml": "docker-compose.yml.j2",
+        "pyproject.toml": "pyproject.toml.j2",
     }
     for output_name, template_name in files.items():
         rendered = env.get_template(template_name).render(**context)

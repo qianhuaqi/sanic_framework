@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import textwrap
+
+import pytest
 
 from lingshu.cli.project import ProjectOptions, check_project, render_project_files
 
@@ -31,6 +34,12 @@ def test_initializer_renders_no_database_project(tmp_path):
     assert "# [MYSQL]" in env_example
     assert "MYSQL_MASTER_HOST=localhost" not in env_example
     assert (tmp_path / "README.md").exists()
+    assert (tmp_path / "pyproject.toml").exists()
+    pyproject_text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'name = "demo-api"' in pyproject_text
+    assert '"lingshu-framework>=0.2,<0.3"' in pyproject_text
+    assert "[project.optional-dependencies]" in pyproject_text
+    assert 'include = ["app*", "config*"]' in pyproject_text
     assert (tmp_path / "run.py").exists()
     run_text = (tmp_path / "run.py").read_text(encoding="utf-8")
     assert "from lingshu.runtime import run_app" in run_text
@@ -50,6 +59,65 @@ def test_initializer_renders_no_database_project(tmp_path):
     assert not (tmp_path / "app" / "language" / "zh-CN" / "ERROR" / "__init__.py").exists()
     assert not (tmp_path / "app" / "v1").exists()
     assert (tmp_path / "public" / "docs" / "index.md").exists()
+
+
+def test_initialized_project_editable_install_in_fresh_venv_without_pythonpath(tmp_path):
+    if os.getenv("LINGSHU_RUN_FRESH_VENV_SMOKE") != "1":
+        pytest.skip("set LINGSHU_RUN_FRESH_VENV_SMOKE=1 to run the fresh-venv install smoke")
+
+    project_dir = tmp_path / "generated"
+    venv_dir = tmp_path / "venv"
+    options = ProjectOptions(
+        project_name="demo-api",
+        app_name="demo_api",
+        port=8100,
+        databases=[],
+        enable_auth=True,
+        enable_signing=True,
+        enable_i18n=True,
+        enable_response_cache=True,
+        include_example=False,
+    )
+    render_project_files(project_dir, options)
+    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    framework_install = subprocess.run(
+        [str(python), "-m", "pip", "install", "-e", f"{ROOT}[dev]"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert framework_install.returncode == 0, framework_install.stderr
+    install_result = subprocess.run(
+        [str(python), "-m", "pip", "install", "-e", ".[dev]"],
+        cwd=project_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert install_result.returncode == 0, install_result.stderr
+
+    smoke = textwrap.dedent(
+        """
+        import importlib
+        module = importlib.import_module("run")
+        assert module.app.name == "demo_api"
+        print("generated project import ok")
+        """
+    )
+    smoke_result = subprocess.run(
+        [str(python), "-c", smoke],
+        cwd=project_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert smoke_result.returncode == 0, smoke_result.stderr
+    assert "generated project import ok" in smoke_result.stdout
 
 
 def test_initializer_renders_selected_databases(tmp_path):
