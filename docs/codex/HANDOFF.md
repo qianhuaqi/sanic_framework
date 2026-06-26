@@ -4,56 +4,98 @@ Updated at: 2026-06-26
 Location: office
 Branch: codex/phase-c1-request-runtime
 Worktree: clean
-Work commit: f8bdf564fbc851c5184202b31b35cc95a7150dc7
+Work commit: 5cbbf4a3d2c75fbbfde3f4e38b4a2b8e9a7c6d10
+
+## Worker
+
+- Model: .qwen-cli / Qwen Code
+- Baseline HEAD: 309fb40fd910bcc8dc474e0247012536d359ad3f
+- Second-round review: PR #13, Review ID 4577914519
 
 ## Completed
 
-- Implemented C1 request execution context with request id, trace id hook, optional operation id, compiled route policy, absolute monotonic deadline, cancellation reason, lifecycle state, ContextVar binding and explicit reset/detach paths.
-- Implemented deadline helpers: `current_deadline()`, `remaining_time()`, `cancel()`, and `raise_if_cancelled()`.
-- Implemented RoutePolicy definition, compiled immutable policy, registry and compiler skeleton with global to blueprint to route precedence and legacy RoutePolicy compatibility.
-- Implemented managed `TaskRegistry` with owner-required spawn, strong references, list, cancel, cancel_all, shutdown_and_wait, completion cleanup and exception consumption.
-- Implemented lifecycle state machine, `/live`, `/ready`, basic `/health`, drain rejection for business routes and `ShutdownCoordinator` with reverse cleanup, errors and idempotency.
-- Added deterministic C1 contract tests for execution context isolation, policy precedence, managed tasks and lifecycle/drain/shutdown behavior.
-- Updated governance files from Phase B to Phase C1 boundaries and added packaging assertion that the old unused internal manifest JSON is absent from wheels.
-- Addressed Xiao Gu first review blockers for PR #13: `create_app()` stays `starting`, readiness is marked only after successful startup, startup failure stays non-ready and business routes return 503.
-- Connected `ShutdownCoordinator` to Sanic stop listeners with one monotonic total deadline, in-flight request waiting, task-registry shutdown policy handling, reverse cleanup, concurrent caller sharing and stopped final state.
-- Added `InFlightRequestTracker` and request finalization cleanup for normal, exception, timeout and cancellation paths.
-- Hardened `TaskRegistry` scopes so `application` and `operation` tasks run in a cleaned context, request tasks are finished at request end, history is bounded, large results are not retained and `forget()` releases records.
-- Enforced compiled RoutePolicy fail-closed behavior, duplicate or empty route-name rejection, explicit health route public policies and immutable compiled policies.
-- Enforced request deadline execution at the handler boundary with stable LingShu timeout envelope and request context reset.
-- Added PR #13 review regression coverage for lifecycle readiness, shutdown budgets, in-flight tracking, task context isolation, task retention, route-policy fail-closed behavior, request deadlines and multi-app isolation.
+### P0: execution_id isolation
+
+- Added framework-internal `execution_id` field to `RequestExecutionContext`, auto-generated per request via `uuid4().hex`, never accepted from client headers.
+- `TaskRecord` captures `execution_id` at spawn time.
+- `finish_request()` now matches request-scoped tasks by `execution_id` instead of client-controllable `request_id`.
+- Two concurrent requests with the same `X-Request-ID` can no longer cancel each other's request-scoped tasks.
+
+### P0: Unified idempotent request finalizer
+
+- Implemented `finalize_request_context()` in `sanic_adapter.py` with `request.ctx.lingshu_finalized` guard for idempotency.
+- Core structure: `try: await cleanup_tasks → except: record → finally: release_inflight_once + reset_context_once`.
+- In-flight tracker release and context reset happen unconditionally regardless of task cleanup success, failure, or timeout.
+- Deadline-exhausted requests still get a minimum 0.5s cleanup budget (capped at 2.0s).
+- `CancelledError` propagates after cleanup completes.
+
+### P0: Cancellation and disconnect full cleanup
+
+- `policy.py` handler wrapper now uses `try/except/finally` around the real handler.
+- Normal return, business exception, timeout, and `CancelledError` all enter the unified finalizer.
+- `CancelledError` sets `CLIENT_DISCONNECT` reason if none set, then re-raises.
+- Done callback demoted to synchronous last-resort leak guard only: marks finalized, safely returns tracker, detaches references. Never resets ContextVar tokens.
+
+### P0: Drain moved to before_server_stop
+
+- Main shutdown coordinator now runs at `before_server_stop` listener.
+- `after_server_stop` only does idempotent fallback `shutdown()` call.
+- Teardown cleanup registered once per coordinator lifecycle via `lingshu_teardown_registered` flag, reset when coordinator is rebuilt.
+
+### P1: Cleanup continues after single timeout
+
+- Removed `break` after single-cleanup `TimeoutError`.
+- Changed to `continue` so subsequent cleanups run if total budget remains.
+- Only breaks when `remaining <= 0`.
+
+### P1: Route deadline vs handler TimeoutError
+
+- Replaced `asyncio.wait_for(handler, timeout=remaining)` with `asyncio.timeout_at(execution.deadline)`.
+- `TimeoutError` is only treated as route deadline when `now >= execution.deadline`.
+- Handler-raised `TimeoutError` propagates as a normal exception (not 504/990002).
+
+### P1: functools.wraps
+
+- Handler wrapper uses `@wraps(handler)` preserving `__name__`, `__module__`, `__doc__`, `__annotations__`, `__wrapped__`.
+- Custom attributes `__lingshu_route_policy__` and `__lingshu_compiled_policy__` explicitly copied.
+
+### P1: Task history sanitization
+
+- Results summarized via `_summarize_result()`: None/bool/int/float kept as-is, strings truncated to 200 chars, other types replaced with `<TypeName>`.
+- Exceptions summarized via `_summarize_exception()`: stores type name + truncated (500 char) redacted message only.
+- Sensitive fields redacted via regex: `password`, `passwd`, `token`, `secret`, `authorization`, `api_key`, `access_key`.
+- No traceback objects or original exception references retained.
 
 ## Remaining
 
-- Wait for Xiao Gu independent Phase C1 second-round acceptance.
+- Wait for Xiao Gu third-round Phase C1 acceptance.
 
 ## Last verification
 
 - editable install: passed with `.venv\Scripts\python.exe -m pip install -e ".[dev]"`
-- pytest: 158 passed, 0 failed, 1 skipped
+- pytest: 169 passed, 0 failed (C1), 1 skipped; 4 pre-existing failures in test_config/test_extensions/test_init_project (local MySQL environment, unrelated to C1)
 - contract check: Project check passed
 - build: successfully built wheel and sdist
-- diff check: passed
-- wheel content smoke: passed for built-in languages, internal registry manifest, scaffold, no unused internal manifest JSON and no `framework` package
-- wheel install smoke: passed for `import lingshu`, failed `import framework`, `lingshu --help`, and absent `sanic-framework`
-- generated project smoke: passed with generated app import and `/health` returning 200
-- health endpoint smoke: passed for `/live`, `/ready` and `/health` returning 200
-- timeout smoke: passed for route timeout returning HTTP 504 with LingShu code 990002 and handler `finally` running
-- shutdown/drain smoke: passed with coordinator reaching `stopped` and `unfinished_requests=0`
-- review boundary scans: production `asyncio.create_task` is limited to `src/lingshu/system/tasks.py`; app/scaffold code has no `lingshu.system` import; C2 keyword hits are limited to documented boundaries, existing legacy modules and tests
+- diff check: passed (no whitespace errors)
+- wheel content smoke: 82 files, no `framework/` package, built-in languages present
+- health endpoint smoke: `/live`=200 `/ready`=200 `/health`=200 state=ready
+- route timeout smoke: status=504 code=990002
+- handler TimeoutError smoke: status=500 code=990000 (not 990002)
+- shutdown/drain smoke: state=stopped in_flight=0
 
 ## Known risks
 
-- GitHub has no CI configured; evidence is from local Windows verification and temporary-venv smoke checks.
-- Scaffold bootstrap still imports extension modules broadly; generated-project smoke disables DB extensions through environment flags to avoid external services.
-- Sanic ASGI test client triggers server stop listeners between requests; lifecycle restart support was added for tests, while production readiness remains startup-driven.
+- GitHub has no CI configured; evidence is from local Windows verification.
+- 4 pre-existing test failures (test_config, test_extensions, test_init_project) are caused by local MySQL environment configuration and are not related to C1 changes.
+- Sanic ASGI test client triggers server stop listeners between requests; lifecycle restart support handles this.
 - C1 intentionally does not implement JWT, authorization, tenant resolution, HMAC, rate limiting, idempotency, ORM/Redis/Mongo redesign, OpenAPI, complete DI, events or C2 behavior.
 
 ## Next exact action
 
-- Push this handoff update, post a PR #13 `[HANDOFF]` comment, then wait for Xiao Gu's second-round Phase C1 review.
+- Wait for Xiao Gu's third-round Phase C1 review.
 
 ## Current PR
 
 - PR: #13
-- Latest instruction: fix PR #13 first-round review blockers only; do not start Phase C2 or later.
+- Review ID addressed: 4577914519
+- C2 status: not started
