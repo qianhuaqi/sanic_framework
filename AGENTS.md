@@ -46,6 +46,36 @@ not written in the above artifacts, it does not exist as a rule.
 6. **Always use the `github` remote** (never `origin`).
 7. **Synchronize with fast-forward only.**
 
+## Branch Naming
+
+Every implementation branch must be prefixed by the **primary writer** of that
+branch. The prefix identifies who is actively writing the branch and is
+enforced by the architecture contract.
+
+| Writer | Branch prefix |
+|---|---|
+| Codex | `codex/phase-<phase>-<slug>` |
+| Qwen | `qwen/phase-<phase>-<slug>` |
+| Gemini | `gemini/phase-<phase>-<slug>` |
+| GLM | `glm/phase-<phase>-<slug>` |
+| Claude | `claude/phase-<phase>-<slug>` |
+| Human (named) | `human/<name>/phase-<phase>-<slug>` |
+| Research (non-implementation) | `research/<slug>` — only for Issue-approved non-implementation research tasks |
+
+Rules:
+
+1. **Branch prefix = primary writer.** The writer who creates the branch owns
+   its prefix.
+2. **Xiao Gu is NOT an implementation branch prefix.** Xiao Gu performs
+   planning, review, and acceptance — never writes implementation branches.
+3. The current writer is **qwen**; the current branch is
+   `qwen/phase-c2-rc-development-constitution`.
+4. **When switching developers:** the old developer must test, update HANDOFF,
+   commit, push, and stop writing. The new developer must create a new
+   prefix branch and record the inherited baseline in HANDOFF.
+5. **Without explicit Issue approval**, no developer may continue writing
+   another developer's branch.
+
 ## Prohibited Git Actions
 
 - Do not run `git reset --hard`.

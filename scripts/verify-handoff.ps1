@@ -71,7 +71,7 @@ function Assert-GitCommitExists {
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $previousPreference
     if ($exitCode -ne 0) {
-        throw "HANDOFF Work commit '$Commit' does not exist. Update docs/codex/HANDOFF.md."
+        throw "HANDOFF Work commit '$Commit' does not exist. Update docs/development/HANDOFF.md."
     }
 }
 
@@ -80,7 +80,7 @@ function Assert-GitCommitIsAncestor {
 
     & git merge-base --is-ancestor $Commit HEAD 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "HANDOFF Work commit '$Commit' is not an ancestor of current HEAD. Update docs/codex/HANDOFF.md."
+        throw "HANDOFF Work commit '$Commit' is not an ancestor of current HEAD. Update docs/development/HANDOFF.md."
     }
 }
 
@@ -88,7 +88,7 @@ function Read-HandoffFields {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if (-not (Test-Path $Path)) {
-        throw "docs/codex/HANDOFF.md is missing. Create it before handoff."
+        throw "docs/development/HANDOFF.md is missing. Create it before handoff."
     }
 
     $fields = @{}
@@ -107,13 +107,13 @@ function Assert-HandoffMatchesRepository {
     )
 
     if ($Fields["Branch"] -ne $BranchName) {
-        throw "HANDOFF Branch is '$($Fields["Branch"])', expected '$BranchName'. Update docs/codex/HANDOFF.md."
+        throw "HANDOFF Branch is '$($Fields["Branch"])', expected '$BranchName'. Update docs/development/HANDOFF.md."
     }
     if ($Fields["Worktree"] -ne "clean") {
-        throw "HANDOFF Worktree must be clean. Update docs/codex/HANDOFF.md after committing."
+        throw "HANDOFF Worktree must be clean. Update docs/development/HANDOFF.md after committing."
     }
     if (-not $Fields.ContainsKey("Work commit") -or -not $Fields["Work commit"]) {
-        throw "HANDOFF Work commit is missing. Update docs/codex/HANDOFF.md."
+        throw "HANDOFF Work commit is missing. Update docs/development/HANDOFF.md."
     }
     if ($Fields.Values | Where-Object { $_ -match "pending" }) {
         throw "HANDOFF contains a pending placeholder. Replace it before handoff."
@@ -169,7 +169,7 @@ try {
     Invoke-Git @("fetch", "github") | Out-Null
     Assert-HeadMatchesRemote $Branch
 
-    $handoffPath = Join-Path $repoRoot "docs/codex/HANDOFF.md"
+    $handoffPath = Join-Path $repoRoot "docs/development/HANDOFF.md"
     $fields = Read-HandoffFields $handoffPath
 
     Assert-HandoffMatchesRepository $fields $Branch

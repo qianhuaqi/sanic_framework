@@ -68,16 +68,30 @@ It does NOT govern:
 **Chat history, model memory, and session context are NOT sources of truth.**
 If a rule is not in the above artifacts, it does not exist.
 
+### 3.1 Issue Scope And Constitution Authority
+
+- The Issue defines the **current task scope**, but does NOT automatically
+  override the constitution.
+- A deviation from the constitution requires an approved **ADR or Deviation
+  record** referenced in the Issue.
+- The user can authorize a deviation verbally or in chat, but it only becomes
+  a repository fact after being recorded in both the Issue **and** an ADR or
+  constitution update.
+- Chat instructions (including model session context) are NOT permanent
+  repository rules.
+- If an Issue conflicts with the constitution and no approved deviation ADR
+  exists: **STOP**. Do not proceed until Xiao Gu or the user resolves the
+  conflict and records the decision.
+
 ## 4. Phase Lifecycle
 
 1. **Issue creation:** Xiao Gu creates a GitHub Issue defining scope,
    deliverables, test contract, and prohibitions.
-2. **Branch creation:** Developer creates a branch named per convention
-   (`codex/phase-<name>` or `research/<name>`).
+2. **Branch creation:** Developer creates a branch named per the prefix rules
+   in §5.1 (writer prefix + `phase-<phase>-<slug>`).
 3. **Implementation:** Developer works on the branch, following all rules.
 4. **Verification:** Developer runs all required tests and checks.
-5. **PR creation:** Developer pushes and creates a PR (unless the Issue says
-   to push only and wait for review).
+5. **PR creation:** Xiao Gu creates and maintains the PR by default (see §5.2).
 6. **Review:** Xiao Gu reviews the branch/PR independently.
 7. **Acceptance:** Xiao Gu declares acceptance or requests changes.
 8. **Merge:** User performs the final merge.
@@ -89,7 +103,6 @@ or started before the previous phase is merged.**
 ## 5. Branch And PR Rules
 
 - One phase = one Issue = one branch = one PR.
-- Branch naming: `codex/phase-<name>` or `research/<name>`.
 - A branch has exactly one writer at a time.
 - Always use the `github` remote (never `origin`).
 - Synchronize with `git merge --ff-only` (fast-forward only).
@@ -99,6 +112,43 @@ or started before the previous phase is merged.**
 - Never run `git reset --hard` or `git clean -fd`.
 - Before switching devices or developers: test, update HANDOFF, commit, push,
   confirm clean worktree.
+
+### 5.1 Branch Prefixes
+
+Every implementation branch must be prefixed by the **primary writer** of
+that branch. The prefix identifies who is actively writing the branch and is
+enforced by the architecture contract (`architecture-contract.json`).
+
+| Writer | Branch prefix |
+|---|---|
+| Codex | `codex/phase-<phase>-<slug>` |
+| Qwen | `qwen/phase-<phase>-<slug>` |
+| Gemini | `gemini/phase-<phase>-<slug>` |
+| GLM | `glm/phase-<phase>-<slug>` |
+| Claude | `claude/phase-<phase>-<slug>` |
+| Human (named) | `human/<name>/phase-<phase>-<slug>` |
+| Research (non-implementation) | `research/<slug>` — only for Issue-approved non-implementation research tasks |
+
+Rules:
+
+1. **Branch prefix = primary writer.** The writer who creates the branch owns
+   its prefix.
+2. **Xiao Gu is NOT an implementation branch prefix.** Xiao Gu performs
+   planning, review, and acceptance — never writes implementation branches.
+3. The current writer is **qwen**; the current branch is
+   `qwen/phase-c2-rc-development-constitution`.
+4. **When switching developers:** the old developer must test, update HANDOFF,
+   commit, push, and stop writing. The new developer must create a new
+   prefix branch and record the inherited baseline in HANDOFF.
+5. **Without explicit Issue approval**, no developer may continue writing
+   another developer's branch.
+
+### 5.2 PR Creation
+
+- Xiao Gu creates and maintains PRs by default.
+- The developer only commits and pushes the branch.
+- The developer may create a PR only when the Issue explicitly authorizes it.
+- The user performs the final merge.
 
 ## 6. Directory Ownership
 
@@ -147,11 +197,18 @@ See: `docs/architecture/dependency-rules.md`
 
 | Tier | Definition | Deletion procedure |
 |---|---|---|
-| **Stable** | Documented public API (top-level facades, `RoutePolicy`, `Principal`, `Authenticator`, etc.) | Compat shim + DeprecationWarning + migration docs + 2 minor version minimum + scaffold update |
-| **Experimental** | Public but not yet stable (new chain APIs) | PendingDeprecationWarning + 1 minor version |
+| **Stable** | Documented public API that is not provisional. Includes top-level facades, `RoutePolicy`, `Principal`, `Authenticator` (protocol), `configure_authentication`, `get_principal`, `require_principal`, `TenantContext`, `TenantResolver` (protocol), `configure_tenant_resolution`, `get_tenant`, `require_tenant`, and outcome/result types. | Compat shim + DeprecationWarning + migration docs + 2 minor version minimum + scaffold update |
+| **Experimental** | Public but provisional. Includes the chain and concrete-resolver implementations: `AuthenticatorChain`, `JwtBearerAuthenticator`, `TenantResolverChain`, `ClaimTenantResolver`. Subject to signature changes. | PendingDeprecationWarning + 1 minor version + migration docs |
 | **Internal** | `system.*` subpackages not documented as public | Free to move; delete if zero consumers confirmed |
 | **Legacy** | Old importable entry points still in use | Move to `compat/` with DeprecationWarning |
 | **Deprecated** | Already in `compat/` or marked deprecated | Remove at next major version |
+
+**Plan A (conservative classification):** chain and concrete-implementation
+symbols are classified as **Experimental**, not Stable. This ensures that
+the interfaces most likely to evolve (auth chains, JWT bearer, tenant
+resolver chains, claim-based resolver) carry the lighter stability guarantee
+while the protocols, facades, and accessor functions they build on remain
+Stable. Rationale: ADR-002.
 
 ### 8.2 Rules
 

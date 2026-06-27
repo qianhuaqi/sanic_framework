@@ -23,7 +23,29 @@ into the GitHub Issue description or the phase's task document.
 
 ## Branch
 
-- Branch name: (per convention)
+Every implementation branch must be prefixed by the **primary writer** of
+that branch. The prefix identifies who is actively writing the branch and is
+enforced by the architecture contract.
+
+| Writer | Branch prefix |
+|---|---|
+| Codex | `codex/phase-<phase>-<slug>` |
+| Qwen | `qwen/phase-<phase>-<slug>` |
+| Gemini | `gemini/phase-<phase>-<slug>` |
+| GLM | `glm/phase-<phase>-<slug>` |
+| Claude | `claude/phase-<phase>-<slug>` |
+| Human (named) | `human/<name>/phase-<phase>-<slug>` |
+| Research (non-implementation) | `research/<slug>` — only for Issue-approved non-implementation research tasks |
+
+Rules:
+
+1. Branch prefix = primary writer.
+2. Xiao Gu is NOT an implementation branch prefix.
+3. When switching developers: old developer must test, update HANDOFF,
+   commit, push, and stop. New developer creates a new prefix branch.
+4. Without explicit Issue approval, no developer may continue another
+   developer's branch.
+
 - Base: `main`
 - Remote: `github`
 

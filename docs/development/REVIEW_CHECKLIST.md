@@ -7,6 +7,11 @@ Use this checklist for every phase review (by Xiao Gu or any reviewer).
 - [ ] All changes are within the Issue's allowed scope.
 - [ ] No production code modified outside the allowed file list.
 - [ ] No new third-party dependencies added.
+- [ ] Branch prefix matches the primary writer (see §5.1 of the constitution
+      and `branch_prefixes` in `architecture-contract.json`).
+- [ ] Current branch starts with the prefix for `current_writer` in the
+      architecture contract.
+- [ ] Xiao Gu is NOT listed as an implementation branch writer.
 
 ## Security
 

@@ -29,6 +29,22 @@ governance for when import paths can be moved, renamed, or deleted.
    `lingshu.auth` — they are legacy symbols in `middleware/auth.py`.
 6. `data_state`, `created_time`, `updated_time`, logical-delete fields are
    backend conventions. They do NOT enter the generic data core.
+7. **Plan A (conservative classification).** Within the new auth and tenant
+   facades, symbols are split into two tiers:
+
+   - **Stable**: protocols (`Authenticator`, `TenantResolver`), facades and
+     accessors (`configure_authentication`, `get_principal`, `require_principal`,
+     `configure_tenant_resolution`, `get_tenant`, `require_tenant`), outcome
+     and result types (`AuthResult`, `AuthenticationOutcome`,
+     `AuthenticationRejected`, `TenantContext`, `TenantResolutionResult`,
+     `TenantResolutionOutcome`), and value types (`Principal`).
+   - **Experimental**: chain and concrete-implementation symbols
+     (`AuthenticatorChain`, `JwtBearerAuthenticator`, `TenantResolverChain`,
+     `ClaimTenantResolver`).
+
+   Every symbol in a module's `__all__` must appear in exactly one tier
+   (Stable or Experimental). This split is enforced by
+   `tests/architecture/test_public_api_contract.py`.
 
 ## Consequences
 
@@ -40,6 +56,13 @@ governance for when import paths can be moved, renamed, or deleted.
 
 ## Rejected Alternatives
 
+- **Plan B (all new auth/tenant symbols Stable):** Classifying
+  `AuthenticatorChain`, `JwtBearerAuthenticator`, `TenantResolverChain`, and
+  `ClaimTenantResolver` as Stable from the start. Rejected: these chain and
+  concrete-implementation symbols are the most likely to evolve as
+  integrations accumulate; granting them the full Stable guarantee would
+  freeze them prematurely and force deprecation cycles for routine
+  improvements.
 - **Delete legacy code immediately:** Breaks downstream projects that import
   `middleware/auth.py`. Rejected.
 - **No tier system:** Makes it impossible to reason about API stability.

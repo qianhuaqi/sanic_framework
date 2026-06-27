@@ -15,11 +15,14 @@ Source: `docs/architecture/src-migration-roadmap.md` (API Stability Tiers)
 
 ## 2. Classification: Authentication API
 
-Authentication is split across four entry points:
+Authentication is split across four entry points. Within `lingshu.auth`, the
+new API symbols are further split into **Stable** and **Experimental** tiers
+under Plan A (conservative classification — see ADR-002).
 
 | Import path | Tier | Notes |
 |---|---|---|
-| `from lingshu.auth import Principal, Authenticator, AuthenticatorChain, JwtBearerAuthenticator, AuthenticationOutcome, AuthenticationRejected, AuthResult, configure_authentication, get_principal, require_principal` | **Stable** | New auth API (C2.1/C2.2A). Documented, tested. |
+| `from lingshu.auth import Principal, AuthResult, AuthenticationOutcome, AuthenticationRejected, Authenticator, configure_authentication, get_principal, require_principal` | **Stable** | Protocols, facades, accessors, and outcome/result types. Documented, tested. |
+| `from lingshu.auth import AuthenticatorChain, JwtBearerAuthenticator` | **Experimental** | Chain and concrete-implementation symbols. Public but provisional; subject to signature changes. |
 | `from lingshu.auth import Auth, token_required` | **Does NOT exist** | `lingshu.auth` does not export these. |
 | `from lingshu.middleware.auth import Auth, token_required` | **Legacy** | Legacy JWT auth class. Gets compat shim in R1. |
 | `from lingshu.extensions.auth import Auth, token_required` | **Legacy facade** | Thin re-export of `middleware.auth`. |
@@ -29,7 +32,8 @@ Authentication is split across four entry points:
 
 | Import path | Tier | Notes |
 |---|---|---|
-| `from lingshu.tenant import TenantContext, TenantResolutionResult, TenantResolutionOutcome, TenantResolver, TenantResolverChain, ClaimTenantResolver, configure_tenant_resolution, get_tenant, require_tenant` | **Stable** | New tenant API (C2.2A). Documented, tested. |
+| `from lingshu.tenant import TenantContext, TenantResolutionResult, TenantResolutionOutcome, TenantResolver, configure_tenant_resolution, get_tenant, require_tenant` | **Stable** | Protocols, facades, accessors, and outcome/result types. Documented, tested. |
+| `from lingshu.tenant import TenantResolverChain, ClaimTenantResolver` | **Experimental** | Chain and concrete-resolver symbols. Public but provisional; subject to signature changes. |
 | `from lingshu.system.auth.tenant.*` | **Internal** | Will move to `contrib/tenant/` in R3. |
 
 ## 4. Classification: Top-Level Facade

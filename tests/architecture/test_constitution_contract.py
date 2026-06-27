@@ -50,7 +50,7 @@ def test_current_phase_is_c2_rc():
     text = _read("docs/development/CURRENT_PHASE.md")
     assert "Current phase: C2-RC" in text
     assert "Current issue: #21" in text
-    assert "codex/phase-c2-rc-development-constitution" in text
+    assert "qwen/phase-c2-rc-development-constitution" in text
     assert "Next phase allowed: no" in text
     assert "ed3ff04" in text  # PR #20 merge commit
 
@@ -111,9 +111,15 @@ def test_architecture_contract_json_exists_and_valid():
     required_top_keys = [
         "schema_version",
         "constitution_version",
+        "branch_prefixes",
+        "current_writer",
+        "current_branch",
+        "research_branch_policy",
+        "writer_handoff_policy",
         "ownership_roots",
         "stable_public_modules",
         "stable_public_symbols",
+        "experimental_public_symbols",
         "legacy_api_candidates",
         "deprecated_api_candidates",
         "target_layers",
@@ -152,3 +158,57 @@ def test_old_codex_files_are_compatibility_pointers_only():
     assert "Current phase:" not in current_phase.replace("Compatibility Pointer", "")
     assert "Current issue:" not in current_phase
     assert "Updated at:" not in handoff.replace("Compatibility Pointer", "")
+
+
+def _read_json(relative_path):
+    return json.loads(_read(relative_path))
+
+
+def test_branch_prefix_matches_current_writer():
+    """current_branch must start with the prefix for current_writer."""
+    contract = _read_json("docs/architecture/architecture-contract.json")
+    writer = contract["current_writer"]
+    branch = contract["current_branch"]
+    prefixes = contract["branch_prefixes"]
+
+    assert writer in prefixes, f"current_writer '{writer}' not in branch_prefixes"
+    prefix = prefixes[writer]
+    assert branch.startswith(prefix), (
+        f"current_branch '{branch}' does not start with prefix '{prefix}' "
+        f"for current_writer '{writer}'"
+    )
+
+
+def test_qwen_phase_does_not_use_codex_prefix():
+    """The current qwen branch must NOT start with codex/."""
+    contract = _read_json("docs/architecture/architecture-contract.json")
+    branch = contract["current_branch"]
+    writer = contract["current_writer"]
+
+    assert writer == "qwen"
+    assert not branch.startswith("codex/"), (
+        f"current_branch '{branch}' is a qwen branch but uses codex/ prefix"
+    )
+
+
+def test_all_developer_prefixes_are_unique():
+    """Each developer in branch_prefixes must have a unique prefix."""
+    contract = _read_json("docs/architecture/architecture-contract.json")
+    prefixes = contract["branch_prefixes"]
+
+    values = list(prefixes.values())
+    assert len(values) == len(set(values)), (
+        f"Duplicate branch prefixes found: {values}"
+    )
+
+
+def test_human_branch_requires_name():
+    """The human prefix pattern must include a <name> placeholder."""
+    contract = _read_json("docs/architecture/architecture-contract.json")
+    prefixes = contract["branch_prefixes"]
+
+    assert "human" in prefixes
+    human_prefix = prefixes["human"]
+    assert "<name>" in human_prefix, (
+        f"human prefix must include <name> placeholder, got: {human_prefix}"
+    )

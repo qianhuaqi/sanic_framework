@@ -1,6 +1,18 @@
 {
   "schema_version": "1.0.0",
   "constitution_version": "1.0",
+  "branch_prefixes": {
+    "codex": "codex/phase-",
+    "qwen": "qwen/phase-",
+    "gemini": "gemini/phase-",
+    "glm": "glm/phase-",
+    "claude": "claude/phase-",
+    "human": "human/<name>/phase-"
+  },
+  "current_writer": "qwen",
+  "current_branch": "qwen/phase-c2-rc-development-constitution",
+  "research_branch_policy": "research/<slug> only for Issue-approved non-implementation research tasks",
+  "writer_handoff_policy": "When switching developers: old developer must test, update HANDOFF, commit, push, and stop writing. New developer must create a new prefix branch and record the inherited baseline in HANDOFF. Without explicit Issue approval, no developer may continue writing another developer's branch.",
   "ownership_roots": {
     "framework": "src/lingshu",
     "project_app": "app",
@@ -32,20 +44,16 @@
       "AuthenticationOutcome",
       "AuthenticationRejected",
       "Authenticator",
-      "AuthenticatorChain",
-      "JwtBearerAuthenticator",
       "Principal",
       "configure_authentication",
       "get_principal",
       "require_principal"
     ],
     "lingshu.tenant": [
-      "ClaimTenantResolver",
       "TenantContext",
       "TenantResolutionOutcome",
       "TenantResolutionResult",
       "TenantResolver",
-      "TenantResolverChain",
       "configure_tenant_resolution",
       "get_tenant",
       "require_tenant"
@@ -57,6 +65,16 @@
       "BaseModel",
       "BusinessModel",
       "Model"
+    ]
+  },
+  "experimental_public_symbols": {
+    "lingshu.auth": [
+      "AuthenticatorChain",
+      "JwtBearerAuthenticator"
+    ],
+    "lingshu.tenant": [
+      "ClaimTenantResolver",
+      "TenantResolverChain"
     ]
   },
   "legacy_api_candidates": [

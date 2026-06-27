@@ -2,7 +2,7 @@
 
 Project: LingShu Framework
 Current phase: C2-RC - Development Constitution V1 and Machine Boundary Tests
-Current branch: codex/phase-c2-rc-development-constitution
+Current branch: qwen/phase-c2-rc-development-constitution
 Current issue: #21
 Status: in progress
 Next phase allowed: no

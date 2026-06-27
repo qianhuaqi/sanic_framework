@@ -83,7 +83,7 @@ function Read-HandoffFields {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if (-not (Test-Path $Path)) {
-        throw "docs/codex/HANDOFF.md is missing. Stop before editing code."
+        throw "docs/development/HANDOFF.md is missing. Stop before editing code."
     }
 
     $fields = @{}
@@ -124,7 +124,7 @@ function Assert-HandoffIsValid {
 function Get-CurrentPrNumber {
     param([Parameter(Mandatory = $true)][string]$RepositoryRoot)
 
-    $phaseFile = Join-Path $RepositoryRoot "docs/codex/CURRENT_PHASE.md"
+    $phaseFile = Join-Path $RepositoryRoot "docs/development/CURRENT_PHASE.md"
     if (-not (Test-Path $phaseFile)) {
         return "unknown"
     }
@@ -151,7 +151,7 @@ try {
 
     $currentBranch = (Invoke-Git @("branch", "--show-current") | Select-Object -First 1).Trim()
     $currentHead = Get-FullSha "HEAD"
-    $handoffPath = Join-Path $repoRoot "docs/codex/HANDOFF.md"
+    $handoffPath = Join-Path $repoRoot "docs/development/HANDOFF.md"
     $handoffFields = Read-HandoffFields $handoffPath
     Assert-HandoffIsValid $handoffFields $Branch
     $prNumber = Get-CurrentPrNumber $repoRoot
@@ -164,7 +164,7 @@ try {
     Write-Host ""
     Write-Host "HANDOFF.md:"
     if (-not (Test-Path $handoffPath)) {
-        throw "docs/codex/HANDOFF.md is missing. Stop before editing code."
+        throw "docs/development/HANDOFF.md is missing. Stop before editing code."
     }
     Get-Content $handoffPath | ForEach-Object { Write-Host $_ }
     Write-Host ""

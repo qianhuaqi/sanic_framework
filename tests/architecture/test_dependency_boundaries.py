@@ -29,11 +29,12 @@ def _collect_py_files(dir_path):
 
 
 def _extract_imports(file_path):
-    """Extract all import targets from a Python file using AST."""
-    try:
-        tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
-    except SyntaxError:
-        return []
+    """Extract all import targets from a Python file using AST.
+
+    Fails closed on SyntaxError — a file that cannot be parsed is a real
+    problem and must not be silently skipped.
+    """
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
 
     imports = []
     for node in ast.walk(tree):
@@ -41,8 +42,14 @@ def _extract_imports(file_path):
             for alias in node.names:
                 imports.append(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                imports.append(node.module)
+            # For "from X import Y", the full import target is X.Y when Y is
+            # a submodule (e.g. "from lingshu import system" -> "lingshu.system").
+            # When node.module is None (relative imports with no leading dots
+            # context), fall back to the alias name.
+            module = node.module or ""
+            for alias in node.names:
+                full_name = f"{module}.{alias.name}" if module else alias.name
+                imports.append(full_name)
     return imports
 
 
@@ -126,4 +133,48 @@ def test_src_lingshu_does_not_import_project_code():
 
     assert not violations, (
         "src/lingshu imports project code:\n" + "\n".join(violations)
+    )
+
+
+def test_extract_imports_catches_from_lingshu_import_system(tmp_path):
+    """The AST must resolve 'from lingshu import system' to 'lingshu.system'.
+
+    This is a regression test for the ImportFrom combination bug where only
+    the module ('lingshu') was recorded, missing the submodule reference.
+    """
+    test_file = tmp_path / "test_module.py"
+    test_file.write_text("from lingshu import system\n", encoding="utf-8")
+
+    imports = _extract_imports(test_file)
+    assert "lingshu.system" in imports, (
+        f"Expected 'lingshu.system' in imports, got: {imports}"
+    )
+
+
+def test_extract_imports_catches_from_lingshu_import_middleware(tmp_path):
+    """The AST must resolve 'from lingshu import middleware' to 'lingshu.middleware'."""
+    test_file = tmp_path / "test_module.py"
+    test_file.write_text("from lingshu import middleware\n", encoding="utf-8")
+
+    imports = _extract_imports(test_file)
+    assert "lingshu.middleware" in imports, (
+        f"Expected 'lingshu.middleware' in imports, got: {imports}"
+    )
+
+
+def test_extract_imports_fails_closed_on_syntax_error(tmp_path):
+    """SyntaxError must propagate, NOT return an empty list.
+
+    A file that cannot be parsed is a real problem and must not be silently
+    skipped — that would mask real violations.
+    """
+    test_file = tmp_path / "broken.py"
+    test_file.write_text("def broken(:\n", encoding="utf-8")
+
+    try:
+        _extract_imports(test_file)
+    except SyntaxError:
+        return  # expected
+    raise AssertionError(
+        "SyntaxError should have been raised, but _extract_imports did not fail"
     )
