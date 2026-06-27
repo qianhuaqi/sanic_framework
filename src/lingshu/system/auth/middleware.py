@@ -1,24 +1,17 @@
 """Authentication security entry point middleware.
 
-This module installs the authentication gate into the Sanic request lifecycle.
-It runs after the execution context middleware (which binds
-RequestExecutionContext) and before the deadline-wrapped route handler.
-
-Policy:
-- public routes (from CompiledRoutePolicy) are exempt from authentication.
-- non-public routes require authentication when an AuthenticatorChain is
-  registered on the app.
-- if no AuthenticatorChain is registered, the middleware is transparent
-  (the app has not opted into authentication yet).
-- when a chain IS registered and a non-public route is accessed:
-  - authentication runs exactly once per request.
-  - the first SUCCESS short-circuits and binds the Principal.
-  - MISSING, MALFORMED, INVALID, EXPIRED, REVOKED all produce 401.
-  - INTERNAL_ERROR produces a safe 401 that never leaks details.
+Policy (fail-closed):
+- public routes (public=True or auth_required=False) are exempt.
+- non-public routes:
+  - chain not registered OR empty: 401 with error code 990116.
+  - chain registered: authenticate; first SUCCESS binds Principal,
+    any failure produces 401.
 - the Principal is bound to a ContextVar for concurrent isolation.
-- cleanup is handled by the existing finalize_request_context path.
+- cleanup is handled by the existing finalize path.
 - 401 responses carry WWW-Authenticate, stable error codes, and never
   leak tokens, secrets, exception text, or internal class names.
+- Client-visible descriptions are framework-fixed per AuthResult;
+  authenticator-supplied error_description is for internal diagnostics only.
 """
 
 from __future__ import annotations
@@ -55,10 +48,14 @@ _RESULT_DEFAULT_MSG: dict[AuthResult, str] = {
 
 
 def _build_www_authenticate(outcome: AuthenticationOutcome) -> str:
-    """Build the WWW-Authenticate header value per RFC 6750."""
+    """Build the WWW-Authenticate header value per RFC 6750.
+
+    Only framework-fixed descriptions are used — never the authenticator's
+    raw error_description, which may contain sensitive data.
+    """
     error = outcome.result.www_authenticate_error
-    desc = outcome.safe_description
-    safe_desc = desc.replace('"', "'").replace("\n", " ").replace("\r", "")[:200]
+    fixed_desc = _RESULT_DEFAULT_MSG.get(outcome.result, "Authentication failed")
+    safe_desc = fixed_desc.replace('"', "'")[:200]
     return f'Bearer error="{error}", error_description="{safe_desc}"'
 
 
@@ -132,12 +129,8 @@ def install_authentication_middleware(raw_app):
 
         chain = get_authenticator_chain(raw_app)
 
-        # No chain registered: authentication not opted in.  Transparent.
-        if chain is None:
-            return None
-
-        # Chain registered but empty: fail closed — scheme not registered.
-        if chain.is_empty:
+        # Chain not registered OR empty: fail closed.
+        if chain is None or chain.is_empty:
             outcome = AuthenticationOutcome(
                 result=AuthResult.MISSING,
                 error_description="No authentication scheme is registered",

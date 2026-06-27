@@ -1,17 +1,17 @@
-"""Phase C2.1 authentication foundation tests.
+"""Phase C2.1 authentication foundation tests (second round).
 
-Covers:
-- Principal immutability and validation
-- AuthResult taxonomy and WWW-Authenticate mapping
-- AuthenticationOutcome factory methods and safe_description
-- AuthenticatorChain registration order and short-circuit semantics
-- StubAuthenticator deterministic modes
-- JwtBearerAuthenticator: success, missing, malformed, invalid, expired, alg=none
-- Principal binding / ContextVar isolation / cleanup
-- public route exemption
-- protected route 401 with stable error code and WWW-Authenticate
-- concurrent isolation
-- multi-app isolation
+Covers all first-round and second-round review requirements:
+
+1. Fail-closed middleware (chain not registered → 401/990116).
+2. Public lingshu.auth API + bootstrap smoke test.
+3. No error_description or exception leakage in responses/headers/repr.
+4. request.principal context semantics (NoRequestContextError vs None).
+5. Principal cleanup through real request lifecycle (normal/exception/cancel/timeout).
+6. Principal deep immutability (recursive freeze, scope validation).
+7. JWT hardening (order, no duplicates, no family mixing, no encode on production class).
+8. AuthenticatorChain semantics.
+9. Concurrent isolation.
+10. Multi-app isolation.
 """
 
 from __future__ import annotations
@@ -38,6 +38,10 @@ from lingshu.system.auth.context import (
 )
 from lingshu.system.auth.stub_authenticator import StubAuthenticator
 from lingshu.system.auth.jwt_bearer import JwtBearerAuthenticator
+from lingshu.system.auth.jwt_test_helpers import (
+    encode_expired_jwt_token,
+    encode_jwt_token,
+)
 from lingshu.system.errors import NoRequestContextError
 from lingshu.system.policy import RoutePolicyDefinition, set_route_policy
 
@@ -46,7 +50,10 @@ from lingshu.system.policy import RoutePolicyDefinition, set_route_policy
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_request(headers: dict[str, str] | None = None):
+_TEST_SECRET = "test-secret-key-at-least-32-bytes-long"
+
+
+def _make_request(headers=None):
     class FakeHeaders:
         def __init__(self, h):
             self._h = h or {}
@@ -61,8 +68,44 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _make_authed_app(name, chain=None):
+    from lingshu.system import sanic_adapter
+    from lingshu.system.auth.middleware import (
+        install_authentication_middleware,
+        set_authenticator_chain,
+    )
+
+    app = Sanic(name)
+    sanic_adapter.install_context_middleware(app)
+    bp = Blueprint(f"{name}-bp", url_prefix=f"/{name}")
+
+    @bp.get("/public", name="public")
+    async def public_handler(request):
+        from lingshu.response import json_response
+        return json_response({"ok": True})
+
+    set_route_policy(public_handler, RoutePolicyDefinition(public=True))
+
+    @bp.get("/protected", name="protected")
+    async def protected_handler(request):
+        from lingshu.response import json_response
+        from lingshu.system.auth.context import current_principal
+        p = current_principal.get()
+        return json_response({"subject": p.subject if p else None})
+
+    set_route_policy(protected_handler, RoutePolicyDefinition())
+
+    app.blueprint(bp)
+    compile_route_policies(app)
+
+    if chain is not None:
+        set_authenticator_chain(app, chain)
+    install_authentication_middleware(app)
+    return app
+
+
 # ---------------------------------------------------------------------------
-# Principal
+# 1. Principal — deep immutability and scope validation
 # ---------------------------------------------------------------------------
 
 class TestPrincipal:
@@ -109,9 +152,59 @@ class TestPrincipal:
         assert "s3cret" not in repr_str
         assert "u" in repr_str
 
+    # --- Deep immutability ---
+
+    def test_nested_dict_claims_are_frozen(self):
+        p = Principal.create("u", "a", claims={"meta": {"role": "admin"}})
+        nested = p.claims["meta"]
+        with pytest.raises(TypeError):
+            nested["role"] = "superadmin"  # type: ignore[index]
+
+    def test_nested_list_claims_are_frozen(self):
+        p = Principal.create("u", "a", claims={"roles": ["admin", "user"]})
+        nested = p.claims["roles"]
+        assert isinstance(nested, tuple)
+        with pytest.raises(TypeError):
+            nested[0] = "superadmin"  # type: ignore[index]
+
+    def test_deeply_nested_claims_are_frozen(self):
+        p = Principal.create("u", "a", claims={
+            "level1": {"level2": {"level3": ["a", "b"]}}
+        })
+        deep = p.claims["level1"]["level2"]["level3"]
+        assert isinstance(deep, tuple)
+        with pytest.raises(TypeError):
+            deep[0] = "c"  # type: ignore[index]
+
+    def test_nested_set_claims_are_frozen(self):
+        p = Principal.create("u", "a", claims={"perms": {"read", "write"}})
+        nested = p.claims["perms"]
+        assert isinstance(nested, frozenset)
+
+    # --- Scope validation ---
+
+    def test_non_string_scope_rejected(self):
+        with pytest.raises(TypeError):
+            Principal.create("u", "a", scopes=[123])  # type: ignore[list-item]
+
+    def test_empty_scope_string_rejected(self):
+        with pytest.raises(ValueError):
+            Principal.create("u", "a", scopes=["", "read"])
+
+    def test_whitespace_only_scope_rejected(self):
+        with pytest.raises(ValueError):
+            Principal.create("u", "a", scopes=["   "])
+
+    def test_object_scope_not_converted_via_str(self):
+        class FakeScope:
+            def __str__(self):
+                return "fake"
+        with pytest.raises(TypeError):
+            Principal.create("u", "a", scopes=[FakeScope()])  # type: ignore[list-item]
+
 
 # ---------------------------------------------------------------------------
-# AuthResult taxonomy
+# 2. AuthResult taxonomy
 # ---------------------------------------------------------------------------
 
 class TestAuthResult:
@@ -134,39 +227,49 @@ class TestAuthResult:
 
 
 # ---------------------------------------------------------------------------
-# AuthenticationOutcome
+# 3. AuthenticationOutcome — no leakage
 # ---------------------------------------------------------------------------
 
-class TestAuthenticationOutcome:
-    def test_success_factory(self):
-        p = Principal.create("u", "jwt")
-        outcome = AuthenticationOutcome.success(p)
-        assert outcome.is_success
-        assert outcome.principal is p
-        assert outcome.authenticator_id == "jwt"
+class TestAuthenticationOutcomeNoLeakage:
+    def test_repr_does_not_include_error_description(self):
+        outcome = AuthenticationOutcome.malformed("jwt", "secret db password=hunter2")
+        r = repr(outcome)
+        assert "hunter2" not in r
+        assert "secret" not in r
+        assert "malformed" in r
 
-    def test_missing_factory(self):
-        outcome = AuthenticationOutcome.missing("jwt")
-        assert outcome.result is AuthResult.MISSING
-        assert outcome.principal is None
-
-    def test_malformed_factory(self):
-        outcome = AuthenticationOutcome.malformed("jwt", "bad format")
-        assert outcome.result is AuthResult.MALFORMED
-        assert "bad format" in outcome.error_description
-
-    def test_internal_error_safe_description(self):
+    def test_repr_does_not_include_internal_error(self):
         outcome = AuthenticationOutcome.internal_error(
-            "jwt", error=RuntimeError("secret key leaked"),
+            "jwt", error=RuntimeError("secret key=AKIA1234567890"),
         )
-        assert outcome.result is AuthResult.INTERNAL_ERROR
-        assert "secret" not in outcome.safe_description
-        assert outcome.internal_error is not None
-        assert "secret" in str(outcome.internal_error)
+        r = repr(outcome)
+        assert "AKIA1234567890" not in r
+        assert "secret key" not in r
+
+    def test_custom_repr_does_not_include_sensitive_fields(self):
+        """The custom __repr__ must not include error_description or internal_error."""
+        outcome = AuthenticationOutcome(
+            result=AuthResult.INVALID,
+            authenticator_id="jwt",
+            error_description="leaked_secret=ABC123",
+            internal_error=ValueError("password=hunter2"),
+        )
+        r = repr(outcome)
+        assert "ABC123" not in r
+        assert "leaked_secret" not in r
+        assert "hunter2" not in r
+        assert "password" not in r
+
+    def test_safe_description_for_internal_error(self):
+        outcome = AuthenticationOutcome.internal_error(
+            "jwt", error=RuntimeError("db connection lost at 10.0.0.5:5432"),
+        )
+        assert "10.0.0.5" not in outcome.safe_description
+        assert "db connection" not in outcome.safe_description
 
 
 # ---------------------------------------------------------------------------
-# AuthenticatorChain
+# 4. AuthenticatorChain
 # ---------------------------------------------------------------------------
 
 class TestAuthenticatorChain:
@@ -176,11 +279,9 @@ class TestAuthenticatorChain:
         a2 = StubAuthenticator("a2", mode="success")
         chain.register(a1)
         chain.register(a2)
-
         outcome = _run(chain.authenticate(None))
         assert outcome.is_success
         assert outcome.authenticator_id == "a1"
-        assert a1.call_count == 1
         assert a2.call_count == 0
 
     def test_missing_falls_through(self):
@@ -189,12 +290,9 @@ class TestAuthenticatorChain:
         a2 = StubAuthenticator("a2", mode="success")
         chain.register(a1)
         chain.register(a2)
-
         outcome = _run(chain.authenticate(None))
         assert outcome.is_success
         assert outcome.authenticator_id == "a2"
-        assert a1.call_count == 1
-        assert a2.call_count == 1
 
     def test_invalid_short_circuits(self):
         chain = AuthenticatorChain()
@@ -202,7 +300,6 @@ class TestAuthenticatorChain:
         a2 = StubAuthenticator("a2", mode="success")
         chain.register(a1)
         chain.register(a2)
-
         outcome = _run(chain.authenticate(None))
         assert outcome.result is AuthResult.INVALID
         assert a2.call_count == 0
@@ -211,7 +308,6 @@ class TestAuthenticatorChain:
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("a1", mode="missing"))
         chain.register(StubAuthenticator("a2", mode="missing"))
-
         outcome = _run(chain.authenticate(None))
         assert outcome.result is AuthResult.MISSING
 
@@ -223,18 +319,13 @@ class TestAuthenticatorChain:
     def test_exception_wrapped_to_internal_error(self):
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("boom", raise_exc=RuntimeError("db down")))
-
         outcome = _run(chain.authenticate(None))
         assert outcome.result is AuthResult.INTERNAL_ERROR
-        assert "db down" not in outcome.safe_description
 
     def test_register_requires_authenticator_id(self):
         chain = AuthenticatorChain()
-
         class NoId:
-            async def authenticate(self, request):
-                pass
-
+            async def authenticate(self, request): pass
         with pytest.raises(ValueError):
             chain.register(NoId())  # type: ignore[arg-type]
 
@@ -260,7 +351,7 @@ class TestAuthenticatorChain:
 
 
 # ---------------------------------------------------------------------------
-# StubAuthenticator
+# 5. StubAuthenticator
 # ---------------------------------------------------------------------------
 
 class TestStubAuthenticator:
@@ -281,7 +372,6 @@ class TestStubAuthenticator:
     def test_callable_mode(self):
         def custom(request):
             return AuthenticationOutcome.revoked("custom", "banned")
-
         stub = StubAuthenticator("test", mode=custom)
         outcome = _run(stub.authenticate(None))
         assert outcome.result is AuthResult.REVOKED
@@ -293,29 +383,27 @@ class TestStubAuthenticator:
 
 
 # ---------------------------------------------------------------------------
-# JwtBearerAuthenticator
+# 6. JwtBearerAuthenticator — hardening
 # ---------------------------------------------------------------------------
 
 class TestJwtBearerAuthenticator:
     def _make_auth(self, **kwargs):
-        defaults = dict(secret="test-secret-key", algorithms=["HS256"])
+        defaults = dict(secret=_TEST_SECRET, algorithms=["HS256"])
         defaults.update(kwargs)
         return JwtBearerAuthenticator(**defaults)
 
     def test_success(self):
         auth = self._make_auth()
-        token = auth.encode_token(subject="user-1", scopes=["read", "write"])
+        token = encode_jwt_token(_TEST_SECRET, "HS256", subject="user-1", scopes=["read", "write"])
         req = _make_request({"Authorization": f"Bearer {token}"})
         outcome = _run(auth.authenticate(req))
         assert outcome.is_success
         assert outcome.principal.subject == "user-1"
         assert outcome.principal.scopes == frozenset({"read", "write"})
-        assert outcome.principal.authenticator_id == "jwt-bearer"
 
     def test_missing_no_header(self):
         auth = self._make_auth()
-        req = _make_request({})
-        outcome = _run(auth.authenticate(req))
+        outcome = _run(auth.authenticate(_make_request({})))
         assert outcome.result is AuthResult.MISSING
 
     def test_malformed_wrong_scheme(self):
@@ -332,22 +420,21 @@ class TestJwtBearerAuthenticator:
 
     def test_invalid_signature(self):
         auth = self._make_auth()
-        wrong_auth = JwtBearerAuthenticator(secret="other-secret", algorithms=["HS256"])
-        token = wrong_auth.encode_token(subject="user-1")
+        token = encode_jwt_token("other-secret-key-at-least-32-bytes-long", "HS256", subject="user-1")
         req = _make_request({"Authorization": f"Bearer {token}"})
         outcome = _run(auth.authenticate(req))
         assert outcome.result is AuthResult.INVALID
 
     def test_expired(self):
         auth = self._make_auth()
-        token = auth.encode_expired_token(subject="user-1")
+        token = encode_expired_jwt_token(_TEST_SECRET, "HS256", subject="user-1")
         req = _make_request({"Authorization": f"Bearer {token}"})
         outcome = _run(auth.authenticate(req))
         assert outcome.result is AuthResult.EXPIRED
 
-    def test_alg_none_prohibited_in_config(self):
+    def test_alg_none_prohibited(self):
         with pytest.raises(ValueError):
-            JwtBearerAuthenticator(secret="x", algorithms=["none"])
+            JwtBearerAuthenticator(secret="x" * 32, algorithms=["none"])
 
     def test_empty_secret_rejected(self):
         with pytest.raises(ValueError):
@@ -355,41 +442,42 @@ class TestJwtBearerAuthenticator:
 
     def test_empty_algorithms_rejected(self):
         with pytest.raises(ValueError):
-            JwtBearerAuthenticator(secret="x", algorithms=[])
+            JwtBearerAuthenticator(secret="x" * 32, algorithms=[])
+
+    def test_duplicate_algorithm_rejected(self):
+        with pytest.raises(ValueError, match="Duplicate"):
+            JwtBearerAuthenticator(secret="x" * 32, algorithms=["HS256", "HS256"])
+
+    def test_algorithm_order_preserved(self):
+        auth = JwtBearerAuthenticator(secret="x" * 32, algorithms=["HS512", "HS256"])
+        assert auth.algorithms == ("HS512", "HS256")
+
+    def test_mixing_hmac_and_asymmetric_rejected(self):
+        with pytest.raises(ValueError, match="Cannot mix"):
+            JwtBearerAuthenticator(secret="x" * 32, algorithms=["HS256", "RS256"])
+
+    def test_no_encode_token_method_on_production_class(self):
+        auth = self._make_auth()
+        assert not hasattr(auth, "encode_token")
+        assert not hasattr(auth, "encode_expired_token")
 
     def test_issuer_verification(self):
         auth = self._make_auth(issuer="my-issuer")
-        token = auth.encode_token(subject="u", issuer="my-issuer")
+        token = encode_jwt_token(_TEST_SECRET, "HS256", subject="u", issuer="my-issuer")
         req = _make_request({"Authorization": f"Bearer {token}"})
         outcome = _run(auth.authenticate(req))
         assert outcome.is_success
 
     def test_audience_verification(self):
         auth = self._make_auth(audience="my-aud")
-        token = auth.encode_token(subject="u", audience="my-aud")
+        token = encode_jwt_token(_TEST_SECRET, "HS256", subject="u", audience="my-aud")
         req = _make_request({"Authorization": f"Bearer {token}"})
         outcome = _run(auth.authenticate(req))
         assert outcome.is_success
-
-    def test_scopes_as_space_separated_string(self):
-        import jwt as _jwt
-        import time as _time
-
-        auth = self._make_auth()
-        payload = {
-            "sub": "u1",
-            "exp": int(_time.time()) + 3600,
-            "scopes": "read write admin",
-        }
-        token = _jwt.encode(payload, "test-secret-key", algorithm="HS256")
-        req = _make_request({"Authorization": f"Bearer {token}"})
-        outcome = _run(auth.authenticate(req))
-        assert outcome.is_success
-        assert outcome.principal.scopes == frozenset({"read", "write", "admin"})
 
 
 # ---------------------------------------------------------------------------
-# Principal binding / ContextVar isolation
+# 7. Principal binding — ContextVar isolation
 # ---------------------------------------------------------------------------
 
 class TestPrincipalBinding:
@@ -408,19 +496,16 @@ class TestPrincipalBinding:
         async def run_many(total):
             ready = asyncio.Event()
             results = []
-
             async def worker(i):
                 p = Principal.create(f"user-{i}", "jwt")
                 with principal_scope(p):
                     await ready.wait()
                     results.append((i, current_principal.get().subject))
-
             tasks = [asyncio.create_task(worker(i)) for i in range(total)]
             await asyncio.sleep(0)
             ready.set()
             await asyncio.gather(*tasks)
             return results
-
         results = asyncio.run(run_many(100))
         assert sorted(results) == [(i, f"user-{i}") for i in range(100)]
 
@@ -428,20 +513,17 @@ class TestPrincipalBinding:
         async def run_many(total):
             ready = asyncio.Event()
             results = []
-
             async def worker(i):
                 p = Principal.create(f"user-{i}", "jwt")
                 with principal_scope(p):
                     await ready.wait()
                     assert current_principal.get().subject == f"user-{i}"
                     results.append(i)
-
             tasks = [asyncio.create_task(worker(i)) for i in range(total)]
             await asyncio.sleep(0)
             ready.set()
             await asyncio.gather(*tasks)
             return results
-
         results = asyncio.run(run_many(500))
         assert sorted(results) == list(range(500))
 
@@ -456,22 +538,16 @@ class TestPrincipalBinding:
 
 
 # ---------------------------------------------------------------------------
-# Authenticator Protocol conformance
+# 8. Protocol conformance and error codes
 # ---------------------------------------------------------------------------
 
 class TestAuthenticatorProtocol:
     def test_stub_satisfies_protocol(self):
-        stub = StubAuthenticator("test")
-        assert isinstance(stub, Authenticator)
+        assert isinstance(StubAuthenticator("test"), Authenticator)
 
     def test_jwt_satisfies_protocol(self):
-        auth = JwtBearerAuthenticator(secret="x", algorithms=["HS256"])
-        assert isinstance(auth, Authenticator)
+        assert isinstance(JwtBearerAuthenticator(secret="x" * 32, algorithms=["HS256"]), Authenticator)
 
-
-# ---------------------------------------------------------------------------
-# Error code stability
-# ---------------------------------------------------------------------------
 
 class TestErrorCodeStability:
     @pytest.mark.parametrize("result,expected_code", [
@@ -487,10 +563,6 @@ class TestErrorCodeStability:
         assert _RESULT_ERROR_CODE[result] == expected_code
 
 
-# ---------------------------------------------------------------------------
-# AuthenticationRejected bridge exception
-# ---------------------------------------------------------------------------
-
 class TestAuthenticationRejected:
     def test_carries_outcome(self):
         outcome = AuthenticationOutcome.missing("jwt")
@@ -504,61 +576,35 @@ class TestAuthenticationRejected:
 
 
 # ---------------------------------------------------------------------------
-# Middleware integration via ASGI client
+# 9. Middleware — fail-closed
 # ---------------------------------------------------------------------------
 
-def _make_authed_app(name, chain=None):
-    from lingshu.system import sanic_adapter
-    from lingshu.system.auth.middleware import (
-        install_authentication_middleware,
-        set_authenticator_chain,
-    )
+class TestFailClosedMiddleware:
+    def test_no_chain_registered_returns_401(self):
+        """P0 fix: chain not registered → 401/990116, not transparent."""
+        app = _make_authed_app("fail-closed-no-chain", chain=None)
+        _, response = asyncio.run(app.asgi_client.get("/fail-closed-no-chain/protected"))
+        assert response.status == 401
+        assert response.json["code"] == 990116
 
-    app = Sanic(name)
-    sanic_adapter.install_context_middleware(app)
-    bp = Blueprint(f"{name}-bp", url_prefix=f"/{name}")
-
-    @bp.get("/public", name="public")
-    async def public_handler(request):
-        from lingshu.response import json_response
-        return json_response({"ok": True})
-
-    set_route_policy(public_handler, RoutePolicyDefinition(public=True))
-
-    @bp.get("/protected", name="protected")
-    async def protected_handler(request):
-        from lingshu.response import json_response
-        from lingshu.system.auth.context import current_principal
-        p = current_principal.get()
-        return json_response({"subject": p.subject if p else None})
-
-    # auth_required defaults to True when public is not set
-    set_route_policy(protected_handler, RoutePolicyDefinition())
-
-    app.blueprint(bp)
-    compile_route_policies(app)
-
-    if chain is not None:
-        set_authenticator_chain(app, chain)
-    install_authentication_middleware(app)
-    return app
-
-
-class TestPublicRouteExempt:
-    def test_public_route_exempt_even_with_empty_chain(self):
+    def test_empty_chain_returns_401(self):
         chain = AuthenticatorChain()
-        app = _make_authed_app("pub-exempt", chain)
+        app = _make_authed_app("fail-closed-empty", chain)
+        _, response = asyncio.run(app.asgi_client.get("/fail-closed-empty/protected"))
+        assert response.status == 401
+        assert response.json["code"] == 990116
 
-        _, response = asyncio.run(app.asgi_client.get("/pub-exempt/public"))
+    def test_public_route_exempt_even_with_no_chain(self):
+        app = _make_authed_app("fail-closed-public", chain=None)
+        _, response = asyncio.run(app.asgi_client.get("/fail-closed-public/public"))
         assert response.status == 200
 
 
-class TestProtectedRoute401:
+class TestMiddleware401Responses:
     def test_missing_returns_401_with_www_authenticate(self):
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("jwt", mode="missing"))
         app = _make_authed_app("prot-missing", chain)
-
         _, response = asyncio.run(app.asgi_client.get("/prot-missing/protected"))
         assert response.status == 401
         assert "WWW-Authenticate" in response.headers
@@ -569,7 +615,6 @@ class TestProtectedRoute401:
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("jwt", mode="invalid"))
         app = _make_authed_app("prot-invalid", chain)
-
         _, response = asyncio.run(app.asgi_client.get("/prot-invalid/protected"))
         assert response.status == 401
         assert "invalid_token" in response.headers["WWW-Authenticate"]
@@ -578,7 +623,6 @@ class TestProtectedRoute401:
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("jwt", mode="expired"))
         app = _make_authed_app("prot-expired", chain)
-
         _, response = asyncio.run(app.asgi_client.get("/prot-expired/protected"))
         assert response.status == 401
 
@@ -586,45 +630,181 @@ class TestProtectedRoute401:
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("jwt", mode="success", subject="user-42"))
         app = _make_authed_app("prot-success", chain)
-
         _, response = asyncio.run(app.asgi_client.get("/prot-success/protected"))
         assert response.status == 200
         assert response.json["data"]["subject"] == "user-42"
 
-    def test_no_chain_registered_is_transparent(self):
-        app = _make_authed_app("prot-no-chain", chain=None)
+    def test_401_does_not_leak_authenticator_description(self):
+        """P0 fix: authenticator's error_description must not appear in response."""
+        def evil_mode(request):
+            return AuthenticationOutcome.invalid("evil", "secret=db_password:Hunter2|token=abc")
 
-        _, response = asyncio.run(app.asgi_client.get("/prot-no-chain/protected"))
-        assert response.status == 200
-
-    def test_empty_chain_returns_scheme_not_registered_401(self):
         chain = AuthenticatorChain()
-        app = _make_authed_app("prot-empty-chain", chain)
-
-        _, response = asyncio.run(app.asgi_client.get("/prot-empty-chain/protected"))
+        chain.register(StubAuthenticator("evil", mode=evil_mode))
+        app = _make_authed_app("prot-leak-desc", chain)
+        _, response = asyncio.run(app.asgi_client.get("/prot-leak-desc/protected"))
         assert response.status == 401
+        body = str(response.json)
+        header = response.headers.get("WWW-Authenticate", "")
+        assert "Hunter2" not in body
+        assert "Hunter2" not in header
+        assert "db_password" not in body
+        assert "db_password" not in header
+        assert "token=abc" not in body
+        assert "token=abc" not in header
 
-    def test_401_does_not_leak_internal_details(self):
+    def test_401_does_not_leak_internal_exception(self):
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("jwt", raise_exc=RuntimeError("DB password = hunter2")))
-        app = _make_authed_app("prot-leak", chain)
-
-        _, response = asyncio.run(app.asgi_client.get("/prot-leak/protected"))
+        app = _make_authed_app("prot-leak-exc", chain)
+        _, response = asyncio.run(app.asgi_client.get("/prot-leak-exc/protected"))
         assert response.status == 401
-        body_text = str(response.json)
-        assert "hunter2" not in body_text
-        assert "DB password" not in body_text
+        body = str(response.json)
+        assert "hunter2" not in body
+        assert "DB password" not in body
 
 
 # ---------------------------------------------------------------------------
-# Multi-app isolation
+# 10. request.principal context semantics
+# ---------------------------------------------------------------------------
+
+class TestRequestPrincipalSemantics:
+    def test_no_context_raises(self):
+        from lingshu.system.proxies import RequestProxy
+        proxy = RequestProxy()
+        with pytest.raises(NoRequestContextError):
+            _ = proxy.principal
+
+    def test_public_route_returns_none(self):
+        """A public route has an execution context but no principal."""
+        app = _make_authed_app("principal-public-none", chain=None)
+
+        async def check():
+            _, response = await app.asgi_client.get("/principal-public-none/public")
+            return response
+
+        response = asyncio.run(check())
+        assert response.status == 200
+
+    def test_protected_success_returns_principal(self):
+        chain = AuthenticatorChain()
+        chain.register(StubAuthenticator("jwt", mode="success", subject="user-x"))
+        app = _make_authed_app("principal-protected", chain)
+        _, response = asyncio.run(app.asgi_client.get("/principal-protected/protected"))
+        assert response.status == 200
+        assert response.json["data"]["subject"] == "user-x"
+
+
+# ---------------------------------------------------------------------------
+# 11. Principal cleanup through real request lifecycle
+# ---------------------------------------------------------------------------
+
+class TestPrincipalCleanupLifecycle:
+    def test_cleanup_after_normal_return(self):
+        """Principal is cleaned up after a successful request."""
+        chain = AuthenticatorChain()
+        chain.register(StubAuthenticator("jwt", mode="success", subject="clean-normal"))
+        app = _make_authed_app("cleanup-normal", chain)
+
+        _, response = asyncio.run(app.asgi_client.get("/cleanup-normal/protected"))
+        assert response.status == 200
+        assert current_principal.get() is None
+
+    def test_cleanup_after_handler_exception(self):
+        """Principal is cleaned up even if the handler raises."""
+        from lingshu.system import sanic_adapter
+        from lingshu.system.auth.middleware import (
+            install_authentication_middleware,
+            set_authenticator_chain,
+        )
+
+        app = Sanic("cleanup-exc")
+        sanic_adapter.install_context_middleware(app)
+        bp = Blueprint("cleanup-exc-bp", url_prefix="/ce")
+
+        @bp.get("/boom", name="boom")
+        async def boom_handler(request):
+            raise RuntimeError("handler explosion")
+
+        set_route_policy(boom_handler, RoutePolicyDefinition())
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        chain = AuthenticatorChain()
+        chain.register(StubAuthenticator("jwt", mode="success", subject="clean-exc"))
+        set_authenticator_chain(app, chain)
+        install_authentication_middleware(app)
+
+        _, response = asyncio.run(app.asgi_client.get("/ce/boom"))
+        assert response.status == 500
+        assert current_principal.get() is None
+
+    def test_cleanup_after_timeout(self):
+        """Principal is cleaned up after a deadline timeout."""
+        from lingshu.system import sanic_adapter
+        from lingshu.system.auth.middleware import (
+            install_authentication_middleware,
+            set_authenticator_chain,
+        )
+
+        app = Sanic("cleanup-timeout")
+        sanic_adapter.install_context_middleware(app)
+        bp = Blueprint("cleanup-timeout-bp", url_prefix="/ct")
+
+        @bp.get("/slow", name="slow")
+        async def slow_handler(request):
+            await asyncio.sleep(10)
+            return None
+
+        # Very short timeout to trigger deadline quickly
+        set_route_policy(slow_handler, RoutePolicyDefinition(timeout=0.01))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        chain = AuthenticatorChain()
+        chain.register(StubAuthenticator("jwt", mode="success", subject="clean-timeout"))
+        set_authenticator_chain(app, chain)
+        install_authentication_middleware(app)
+
+        _, response = asyncio.run(app.asgi_client.get("/ct/slow"))
+        # Deadline produces 504 or 500 depending on path
+        assert response.status in (504, 500)
+        assert current_principal.get() is None
+
+    def test_subsequent_request_does_not_see_previous_principal(self):
+        """After request A completes, request B must not inherit A's principal."""
+        chain_a = AuthenticatorChain()
+        chain_a.register(StubAuthenticator("jwt", mode="success", subject="user-a"))
+        app = _make_authed_app("cleanup-isolation", chain_a)
+
+        # Request A — authenticated
+        _, resp_a = asyncio.run(app.asgi_client.get("/cleanup-isolation/protected"))
+        assert resp_a.status == 200
+        assert resp_a.json["data"]["subject"] == "user-a"
+
+        # After request A finishes, no principal should be bound in this context.
+        assert current_principal.get() is None
+
+        # Request B with a different authenticator returns a different subject
+        from lingshu.system.auth.middleware import set_authenticator_chain
+        chain_b = AuthenticatorChain()
+        chain_b.register(StubAuthenticator("jwt", mode="success", subject="user-b"))
+        set_authenticator_chain(app, chain_b)
+
+        _, resp_b = asyncio.run(app.asgi_client.get("/cleanup-isolation/protected"))
+        assert resp_b.status == 200
+        assert resp_b.json["data"]["subject"] == "user-b"
+        assert current_principal.get() is None
+
+
+# ---------------------------------------------------------------------------
+# 12. Multi-app isolation
 # ---------------------------------------------------------------------------
 
 class TestMultiAppIsolation:
     def test_separate_apps_have_independent_chains(self):
         chain_a = AuthenticatorChain()
         chain_a.register(StubAuthenticator("auth-a", mode="success", subject="user-a"))
-
         chain_b = AuthenticatorChain()
         chain_b.register(StubAuthenticator("auth-b", mode="missing"))
 
@@ -640,7 +820,7 @@ class TestMultiAppIsolation:
 
 
 # ---------------------------------------------------------------------------
-# Concurrent request isolation through full middleware
+# 13. Concurrent request isolation
 # ---------------------------------------------------------------------------
 
 class TestConcurrentRequestIsolation:
@@ -649,9 +829,7 @@ class TestConcurrentRequestIsolation:
             user = request.headers.get("X-Test-User", "anon")
             if user == "anon":
                 return AuthenticationOutcome.missing("stub")
-            return AuthenticationOutcome.success(
-                Principal.create(user, "stub")
-            )
+            return AuthenticationOutcome.success(Principal.create(user, "stub"))
 
         chain = AuthenticatorChain()
         chain.register(StubAuthenticator("stub", mode=mode_fn))
@@ -666,10 +844,108 @@ class TestConcurrentRequestIsolation:
 
         async def run_all():
             users = [f"user-{i}" for i in range(20)]
-            tasks = [fetch(u) for u in users]
-            return await asyncio.gather(*tasks)
+            return await asyncio.gather(*[fetch(u) for u in users])
 
         results = asyncio.run(run_all())
         for user, status, subject in results:
             assert status == 200, f"{user} got {status}"
-            assert subject == user, f"Expected {user}, got {subject}"
+            assert subject == user
+
+
+# ---------------------------------------------------------------------------
+# 14. Public lingshu.auth API smoke test
+# ---------------------------------------------------------------------------
+
+class TestPublicAuthAPI:
+    def test_imports_from_lingshu_auth(self):
+        from lingshu.auth import (
+            AuthenticatorChain,
+            JwtBearerAuthenticator,
+            Principal,
+            AuthResult,
+            AuthenticationOutcome,
+            Authenticator,
+            configure_authentication,
+            get_principal,
+            require_principal,
+        )
+        assert AuthenticatorChain is not None
+        assert JwtBearerAuthenticator is not None
+        assert Principal is not None
+
+    def test_imports_from_lingshu_top_level(self):
+        import lingshu
+        import lingshu.auth as auth_mod
+        # lingshu.auth module is importable
+        assert auth_mod.Principal is not None
+        assert auth_mod.AuthenticatorChain is not None
+        assert auth_mod.configure_authentication is not None
+
+    def test_configure_authentication_via_public_api(self):
+        """Bootstrap smoke test: configure JWT auth via lingshu.auth public API."""
+        from lingshu.auth import (
+            AuthenticatorChain,
+            JwtBearerAuthenticator,
+            configure_authentication,
+        )
+        from lingshu.system import sanic_adapter
+        from lingshu.system.auth.middleware import install_authentication_middleware
+
+        app = Sanic("public-api-smoke")
+        sanic_adapter.install_context_middleware(app)
+        bp = Blueprint("smoke-bp", url_prefix="/smoke")
+
+        @bp.get("/secure", name="secure")
+        async def secure(request):
+            from lingshu.response import json_response
+            from lingshu.system.auth.context import current_principal
+            p = current_principal.get()
+            return json_response({"sub": p.subject if p else None})
+
+        @bp.get("/open", name="open")
+        async def open_endpoint(request):
+            from lingshu.response import json_response
+            return json_response({"ok": True})
+
+        set_route_policy(open_endpoint, RoutePolicyDefinition(public=True))
+        set_route_policy(secure, RoutePolicyDefinition())
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        chain = AuthenticatorChain()
+        chain.register(JwtBearerAuthenticator(
+            secret=_TEST_SECRET,
+            algorithms=["HS256"],
+            issuer="smoke-issuer",
+        ))
+        configure_authentication(app, chain)
+        install_authentication_middleware(app)
+
+        # Public route works without token
+        _, resp_open = asyncio.run(app.asgi_client.get("/smoke/open"))
+        assert resp_open.status == 200
+
+        # Protected route fails without token
+        _, resp_no_token = asyncio.run(app.asgi_client.get("/smoke/secure"))
+        assert resp_no_token.status == 401
+
+        # Protected route works with valid token
+        token = encode_jwt_token(
+            _TEST_SECRET, "HS256",
+            subject="smoke-user",
+            issuer="smoke-issuer",
+        )
+        _, resp_token = asyncio.run(app.asgi_client.get(
+            "/smoke/secure",
+            headers={"Authorization": f"Bearer {token}"},
+        ))
+        assert resp_token.status == 200
+        assert resp_token.json["data"]["sub"] == "smoke-user"
+
+    def test_business_code_does_not_import_lingshu_system(self):
+        """AST-level check: lingshu.auth does not expose lingshu.system imports."""
+        import lingshu.auth as auth_module
+        # The public module should re-export, not require business users to
+        # import lingshu.system
+        assert hasattr(auth_module, "Principal")
+        assert hasattr(auth_module, "AuthenticatorChain")

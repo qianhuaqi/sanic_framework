@@ -62,10 +62,14 @@ class AuthenticationOutcome:
     """The result of an authentication attempt.
 
     On success, ``principal`` is populated.
-    On failure, ``principal`` is ``None`` and ``error_description`` may carry
-    a *safe* description suitable for WWW-Authenticate.  The raw exception
-    (if any) is accessible only via ``internal_error`` and must never be
-    serialised into a client response.
+    On failure, ``principal`` is ``None`` and ``error_description`` is an
+    internal-only diagnostic that must never be serialised into a client
+    response.  The raw exception (if any) is accessible only via
+    ``internal_error`` and must never be serialised into a client response.
+
+    The ``__repr__`` is safe — it never includes error_description or
+    internal_error content, only the result enum, authenticator_id, and
+    whether a principal is present.
     """
 
     result: AuthResult
@@ -129,7 +133,18 @@ class AuthenticationOutcome:
 
     @property
     def safe_description(self) -> str:
-        """A description safe to include in WWW-Authenticate; never leaks internals."""
+        """A description safe to include in internal diagnostics.
+
+        This must NOT be used directly in client responses — the middleware
+        uses framework-fixed descriptions mapped by AuthResult.
+        """
         if self.result is AuthResult.INTERNAL_ERROR:
             return "Authentication service error"
         return self.error_description
+
+    def __repr__(self) -> str:
+        return (
+            f"AuthenticationOutcome(result={self.result!r}, "
+            f"principal={'set' if self.principal is not None else 'None'}, "
+            f"authenticator_id={self.authenticator_id!r})"
+        )

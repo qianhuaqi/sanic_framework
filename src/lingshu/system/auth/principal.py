@@ -5,6 +5,38 @@ from types import MappingProxyType
 from typing import Any
 
 
+def _deep_freeze(value: Any) -> Any:
+    """Recursively freeze a value so that all nested containers are immutable."""
+    if isinstance(value, MappingProxyType):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
+    if isinstance(value, dict):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return tuple(_deep_freeze(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_deep_freeze(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_deep_freeze(item) for item in value)
+    if isinstance(value, frozenset):
+        return value
+    return value
+
+
+def _validate_scopes(scopes: Any) -> frozenset[str]:
+    """Validate that every scope is a non-empty string."""
+    if scopes is None:
+        return frozenset()
+    result: set[str] = set()
+    for item in scopes:
+        if not isinstance(item, str):
+            raise TypeError(f"Scope must be a string, got {type(item).__name__}")
+        stripped = item.strip()
+        if not stripped:
+            raise ValueError("Scope must be a non-empty string")
+        result.add(stripped)
+    return frozenset(result)
+
+
 @dataclass(frozen=True)
 class Principal:
     """Immutable authenticated identity.
@@ -15,10 +47,8 @@ class Principal:
     Attributes:
         subject: Stable identifier for the authenticated party (e.g. user id).
         authenticator_id: Name of the authenticator that produced this principal.
-        scopes: Frozen set of scope strings.  Authorization checks are out of
-            scope for C2.1; scopes are exposed read-only for future use.
-        claims: Frozen mapping of verified JWT/custom claims.  Only claims that
-            were cryptographically verified by the authenticator belong here.
+        scopes: Frozen set of non-empty string scopes.
+        claims: Deep-frozen mapping of verified JWT/custom claims.
     """
 
     subject: str
@@ -44,21 +74,19 @@ class Principal:
         subject: str,
         authenticator_id: str,
         *,
-        scopes: frozenset[str] | set[str] | tuple[str, ...] | None = None,
+        scopes: frozenset[str] | set[str] | tuple[str, ...] | list[str] | None = None,
         claims: dict[str, Any] | None = None,
     ) -> Principal:
-        """Create a Principal with frozen scopes and read-only claims."""
+        """Create a Principal with deep-frozen scopes, claims, and nested values."""
         return cls(
             subject=str(subject),
             authenticator_id=str(authenticator_id),
-            scopes=frozenset(scopes) if scopes is not None else frozenset(),
-            claims=MappingProxyType(dict(claims)) if claims else MappingProxyType({}),
+            scopes=_validate_scopes(scopes),
+            claims=MappingProxyType(_deep_freeze(dict(claims))) if claims else MappingProxyType({}),
         )
 
     def has_scope(self, scope: str) -> bool:
         return scope in self.scopes
 
     def __repr__(self) -> str:
-        # Deliberately omit claims and scopes detail to avoid accidental
-        # leakage in logs.  subject and authenticator_id are structural.
         return f"Principal(subject={self.subject!r}, authenticator_id={self.authenticator_id!r})"

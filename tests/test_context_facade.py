@@ -37,7 +37,7 @@ def _request(raw_app, path="/v1/demo", method="GET", user=None):
 
 
 def test_import_lingshu_and_public_facade_only():
-    assert lingshu.__all__ == ["APIException", "abort", "app", "config", "db", "language", "logger", "request"]
+    assert lingshu.__all__ == ["APIException", "abort", "app", "auth", "config", "db", "language", "logger", "request"]
     assert importlib.util.find_spec("framework") is None
     assert logger.info
 
