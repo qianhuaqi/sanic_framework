@@ -7,9 +7,14 @@ from lingshu import logger
 from lingshu.controller import require_mysql, require_payload
 from lingshu.exception import raise_code
 from lingshu.response import json_response
+from lingshu.router import RoutePolicy, set_blueprint_policy
 
 
 bp = Blueprint("v1_demo", url_prefix="/v1/demo")
+set_blueprint_policy(
+    bp,
+    RoutePolicy(auth_required=False, signing_required=False, maintenance_check=True),
+)
 CONTROLLER_KIND = "resource"
 
 

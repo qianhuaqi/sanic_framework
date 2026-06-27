@@ -229,8 +229,8 @@ def test_initialized_project_make_module_is_registered(tmp_path):
         "async def main():\n"
         "    app = create_app()\n"
         "    _, response = await app.asgi_client.get('/v1/demo')\n"
-        "    assert response.status == 503\n"
-        "    assert response.json['code'] == 990201\n"
+        "    assert response.status == 401\n"
+        "    assert response.json['code'] == 990116\n"
         "asyncio.run(main())\n"
     )
     load_result = subprocess.run(
@@ -260,3 +260,68 @@ def test_check_project_requires_framework_project_contract(tmp_path):
     render_project_files(tmp_path, options)
 
     assert check_project(tmp_path) == []
+
+
+def test_scaffolded_controller_default_is_auth_required(tmp_path):
+    """Generated resource controllers must default to auth_required=True.
+
+    The scaffold template must NOT include set_blueprint_policy with
+    auth_required=False — that would leave every generated CRUD endpoint
+    (including POST/PUT/PATCH/DELETE) anonymously open.
+    """
+    options = ProjectOptions(
+        project_name="demo-api",
+        app_name="demo_api",
+        port=8100,
+        databases=["mysql"],
+        enable_auth=True,
+        enable_signing=True,
+        enable_i18n=True,
+        enable_response_cache=True,
+        include_example=True,
+    )
+    render_project_files(tmp_path, options)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{tmp_path}{os.pathsep}{ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    env["SANIC_ENV"] = "testing"
+    add_result = subprocess.run(
+        [sys.executable, "-m", "lingshu.cli.main", "add", "v1", "--root", str(tmp_path)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert add_result.returncode == 0, add_result.stderr
+
+    make_result = subprocess.run(
+        [sys.executable, "-m", "lingshu.cli.main", "make", "module", "v1", "orders", "--root", str(tmp_path)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert make_result.returncode == 0, make_result.stderr
+
+    controller_text = (tmp_path / "app" / "v1" / "controller" / "orders.py").read_text(encoding="utf-8")
+    assert "set_blueprint_policy" not in controller_text
+    assert "auth_required=False" not in controller_text
+
+    script = (
+        "import asyncio\n"
+        "from lingshu.app import create_app\n"
+        "async def main():\n"
+        "    app = create_app()\n"
+        "    _, response = await app.asgi_client.get('/v1/orders')\n"
+        "    assert response.status == 401\n"
+        "    assert response.json['code'] == 990116\n"
+        "asyncio.run(main())\n"
+    )
+    load_result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert load_result.returncode == 0, load_result.stderr

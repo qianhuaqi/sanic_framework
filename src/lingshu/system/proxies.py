@@ -101,6 +101,13 @@ class RequestProxy:
             return getattr(ctx, "g")
         return current_user.get()
 
+    @property
+    def principal(self):
+        current_execution_context()  # raises NoRequestContextError if no context
+        from lingshu.system.auth.context import current_principal
+
+        return current_principal.get()
+
 
 class DatabaseProxy:
     @property

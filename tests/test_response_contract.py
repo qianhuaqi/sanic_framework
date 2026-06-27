@@ -9,6 +9,7 @@ from lingshu.app import create_app
 from lingshu.exception import APIException
 from lingshu.router import compile_route_policies
 from lingshu.response import json_response
+from lingshu.system.policy import RoutePolicyDefinition, set_route_policy
 
 
 def _body(response):
@@ -75,6 +76,7 @@ def test_api_exception_response_uses_code_msg_data_shape():
     async def api_error(request):
         raise APIException(code=991111, msg="payload required", status_code=400, data=False)
 
+    set_route_policy(api_error, RoutePolicyDefinition(public=True))
     app.blueprint(bp)
     compile_route_policies(app)
 
@@ -109,6 +111,7 @@ def test_unknown_exception_returns_safe_500_response():
     async def boom(request):
         raise RuntimeError("secret boom text")
 
+    set_route_policy(boom, RoutePolicyDefinition(public=True))
     app.blueprint(bp)
     compile_route_policies(app)
 

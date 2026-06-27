@@ -1,11 +1,11 @@
 # Current Phase
 
 Project: LingShu Framework
-Current phase: C1 - request execution foundation and lifecycle
-Current branch: codex/phase-c1-request-runtime
-Current issue: #12
-Current PR: #13
-Status: implementation allowed within C1 scope
+Current phase: C2.1 - authentication foundation
+Current branch: codex/phase-c2-authentication
+Current issue: #15
+Current PR: #16
+Status: accepted, awaiting merge
 Next phase allowed: no
 
 ## Accepted Baseline
@@ -13,152 +13,68 @@ Next phase allowed: no
 - Phase A accepted and merged.
 - Phase B accepted and merged through PR #8.
 - Phase C0 research convergence accepted and merged through PR #11.
-- C0 merge commit: `d571602cb0e83b7abe49a3f1b53e43dbeb2d2aa8`.
-- Phase B tests previously recorded: 125 passed, 0 failed, 1 skipped.
+- Phase C1 request execution foundation accepted and merged through PR #13.
+- C1 merge commit: `0bbd1b1`.
 
-## Phase Goal
+## Phase C2.1 Goal
 
-Build the request execution foundation required by later security, database, Schema, idempotency and extension work:
+Build the authentication foundation: Principal, AuthResult, AuthenticatorChain,
+JwtBearerAuthenticator, fail-closed middleware, ContextVar binding.
 
-```text
-RequestExecutionContext
-compiled RoutePolicy skeleton
-deadline/cancellation
-TaskRegistry
-health/live/ready/drain
-ShutdownCoordinator
-```
+## Security Contracts
 
-The full specification and acceptance contract are in Issue #12.
+- **create_app() installs authentication middleware unconditionally.**
+  Protected routes with no chain registered → 401/990116.
+- **configure_authentication(app, chain) only sets/replaces the chain.**
+  It does not install middleware. Calling it twice replaces the chain.
+- **Middleware installation is idempotent.**
+  Repeated calls to install_authentication_middleware are no-ops.
+- **lingshu.auth is the sole public authentication module.**
+  No AuthFacade; `lingshu.auth` always resolves to the module.
+- **Scaffold controller template defaults to auth_required=True.**
+  Generated CRUD endpoints are protected by default.
+- **JwtBearerAuthenticator has no token signing methods.**
+  Token generation uses test-only helpers (jwt_test_helpers.py).
+- **JWT scopes: each list/tuple/set item must be a non-empty string.**
+  Numbers, None, empty strings → MALFORMED (no str() conversion).
+- **AuthenticationRejected uses framework-fixed descriptions.**
+  Authenticator error_description never reaches str(exception).
+- **CancelledError is never swallowed.**
+  Principal binding is cleaned up on cancellation before the next request can observe context.
 
-## Required Work
+## Test Results
 
-### Request execution context
+- `tests/test_c2_auth.py`: 111 passed, 0 failed.
+- Full suite: 319 passed, 0 failed, 1 skipped (fresh-venv smoke).
+- `pip check`: no broken requirements.
+- `git diff --check`: passed.
 
-- request_id;
-- trace_id field/propagation hook only;
-- optional operation_id;
-- compiled route policy;
-- absolute monotonic deadline;
-- cancellation reason;
-- lifecycle state;
-- ContextVar isolation and guaranteed reset.
+## Scope Boundaries
 
-### RoutePolicy compiler skeleton
+### In scope (C2.1)
 
-- explicit global -> blueprint/controller -> route precedence;
-- immutable compiled policy;
-- startup validation;
-- current fields limited to public/auth_required compatibility, maintenance_check, timeout, body_limit metadata and audit_level metadata;
-- every route receives a compiled policy.
+- Principal immutable identity with frozen scopes and claims.
+- AuthResult enum with RFC 6750 WWW-Authenticate mapping.
+- AuthenticatorChain with ordered registration and short-circuit semantics.
+- JwtBearerAuthenticator (Bearer/JWT reference implementation).
+- Fail-closed authentication middleware.
+- Principal ContextVar binding with cleanup (normal/exception/cancel).
+- Error codes 990110-990116.
 
-### Deadline and cancellation
-
-- absolute deadline;
-- remaining budget;
-- stable cancellation reasons;
-- cleanup in finally;
-- do not swallow cancellation.
-
-### TaskRegistry
-
-- strong task references;
-- spawn/list/cancel/cancel_all/shutdown_and_wait;
-- consume task exceptions;
-- remove completed tasks;
-- cancellation must be awaited;
-- no default detach.
-
-### Lifecycle
+### Out of scope (prohibited)
 
 ```text
-starting -> ready -> draining -> stopping -> stopped
+Tenant resolution, RBAC, permissions, 403
+HMAC signing, nonce, replay protection
+Rate limiting, concurrency store, idempotency store
+JWT refresh token flow, Session auth, API Key auth
+OpenAPI / TypeScript SDK
+Full DI, Extension Manifest runtime, Outbox, Audit, OTel
+lingshu-ms, Go runtime, Vue runtime, device gateway
 ```
-
-- `/live`;
-- `/ready`;
-- basic `/health`;
-- drain rejects new business work;
-- cleanup callbacks run in reverse order;
-- shutdown budgets and idempotent repeated shutdown.
-
-## Mandatory Tests
-
-- 100 and 1000 concurrent request contexts do not cross-contaminate;
-- multi-app isolation;
-- reset after normal return, exception, cancellation and timeout;
-- deadline remaining budget decreases correctly;
-- parent deadline constrains child operations;
-- route policy precedence, immutability and invalid-combination failures;
-- every route has a compiled policy;
-- TaskRegistry holds strong references, consumes errors and awaits cancellation;
-- lifecycle state transition matrix;
-- drain/readiness behavior;
-- reverse cleanup order and partial cleanup failure;
-- shutdown idempotency and total budget;
-- existing full tests, wheel/sdist and generated-project smoke remain passing.
-
-Concurrency tests must use deterministic Event/Barrier/Fake Clock techniques rather than random sleep.
-
-## Current Prohibitions
-
-Do not implement or refactor the following in C1:
-
-```text
-JWT/API Key/Session authentication
-resource authorization and real TenantContext resolution
-HMAC signing, nonce and replay protection
-rate limiting, concurrency store or idempotency store
-MySQL/SQLite/MongoDB/Redis backend redesign
-Pydantic Schema facade
-OpenAPI 3.1 compiler or TypeScript SDK
-full DI container or Extension Manifest runtime
-Outbox, Audit implementation or OTel exporter
-lingshu-ms, Go runtime, Vue runtime or device gateway
-```
-
-Also prohibited:
-
-- no giant runtime.py;
-- no business imports from `lingshu.system`;
-- no unowned `asyncio.create_task()`;
-- no swallowing `CancelledError`;
-- no unbounded queues;
-- no secrets, private paths, credentials or network addresses;
-- no starting C2 before independent C1 acceptance.
-
-If a later-phase need is discovered, document it in the relevant issue; do not implement it in this branch.
-
-## PR Requirements
-
-PR title:
-
-```text
-feat: add request execution context and lifecycle foundation
-```
-
-PR body must include:
-
-```text
-Refs #12
-implementation summary
-public and internal API list
-lifecycle/state-machine explanation
-test results and new test list
-explicit non-goals
-risks and later extension points
-```
-
-Codex must not merge the PR.
-
-## Acceptance Owner
-
-- Xiao Gu performs independent review and records the result in GitHub.
-- GitHub branch, Issue #12, PR, commits, tests, ADRs and this file are the source of truth.
-- Local chat state is not evidence of completion.
 
 ## Branch And Tracking
 
-- Branch: `codex/phase-c1-request-runtime`
-- Issue: `#12`
-- Pull request: `#13`
+- Branch: `codex/phase-c2-authentication`
+- Issue: `#15`
+- PR: `#16`
