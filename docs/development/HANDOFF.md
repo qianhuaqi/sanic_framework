@@ -6,7 +6,7 @@ Writer: qwen
 Branch: qwen/phase-c2-rc-development-constitution
 Worktree: clean
 Baseline: ed3ff047d5a9fcf60e0708754247a6c27315e56e
-Work commit: eacc83445d3fd6c0d59c7cb9479cb52f7c33616f
+Work commit: 532ba4015008474c054b069e15465855d4aaecc9
 
 ## Completed
 
@@ -28,27 +28,34 @@ Work commit: eacc83445d3fd6c0d59c7cb9479cb52f7c33616f
   test_public_api_contract, test_project_ownership,
   test_scaffold_import_boundaries).
 - Updated tests/test_handoff_workflow.py to use new fact sources.
+- Final gate: human branch regex now rejects phase-* in name via
+  negative lookahead (^human/(?!phase-)[^/]+/phase-[^/]+$).
+- Final gate: shared _validate_legacy_entry helper enforces fail-closed
+  __all__ for kind:facade entries; three counter-example tests added.
+- Final gate: removed erroneous kind:facade from middleware.cache entry
+  (it is an implementation module, not a re-export facade).
 
 ## Remaining
 
-- Final machine gate remediation complete. Awaiting Xiao Gu final review.
+- Final machine gate remediation complete. Awaiting Xiao Gu final acceptance
+  and PR creation.
 
 ## Test Status
 
-- 523 passed, 1 skipped, 0 failed (post-final-gate-remediation).
-- Architecture tests: 60 passed.
-- Handoff tests: 31 passed.
+- 526 passed, 1 skipped, 0 failed (post-final-gate-remediation).
+- Architecture tests: 62 passed.
+- Handoff tests: 32 passed.
 
 ## Known Risks
 
-- CLI check previously failed on app/v1/language missing. Resolved in this
+- CLI check previously failed on app/v1/language missing. Resolved in prior
   round: added app/v1/language/.gitkeep per Xiao Gu approved exception
   (Issue #21). No other app/** files modified, no CLI logic changed.
 - CLI check now exits 0.
 
 ## Next Exact Action
 
-- Wait for Xiao Gu final review.
+- Wait for Xiao Gu final acceptance and PR creation.
 
 ## Current Issue
 
