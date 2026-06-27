@@ -4,7 +4,8 @@ Project: LingShu Framework
 Current phase: C2.1 - authentication foundation
 Current branch: codex/phase-c2-authentication
 Current issue: #15
-Status: implementation complete, awaiting acceptance
+Current PR: #16
+Status: accepted, awaiting merge
 Next phase allowed: no
 
 ## Accepted Baseline
@@ -39,12 +40,14 @@ JwtBearerAuthenticator, fail-closed middleware, ContextVar binding.
 - **AuthenticationRejected uses framework-fixed descriptions.**
   Authenticator error_description never reaches str(exception).
 - **CancelledError is never swallowed.**
-  Principal binding is cleaned up via done-callback.
+  Principal binding is cleaned up on cancellation before the next request can observe context.
 
 ## Test Results
 
-- `tests/test_c2_auth.py`: 108 passed, 0 failed.
-- Full suite: 312 passed, 0 failed (1 skipped: fresh-venv smoke).
+- `tests/test_c2_auth.py`: 111 passed, 0 failed.
+- Full suite: 319 passed, 0 failed, 1 skipped (fresh-venv smoke).
+- `pip check`: no broken requirements.
+- `git diff --check`: passed.
 
 ## Scope Boundaries
 
@@ -74,3 +77,4 @@ lingshu-ms, Go runtime, Vue runtime, device gateway
 
 - Branch: `codex/phase-c2-authentication`
 - Issue: `#15`
+- PR: `#16`
