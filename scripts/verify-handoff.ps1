@@ -84,6 +84,19 @@ function Assert-GitCommitIsAncestor {
     }
 }
 
+function Assert-HandoffOnlyChangesHandoff {
+    param([Parameter(Mandatory = $true)][string]$WorkCommit)
+
+    $diffFiles = Invoke-Git @("diff", "--name-only", "$WorkCommit..HEAD")
+    $diffFiles = $diffFiles | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() }
+    foreach ($file in $diffFiles) {
+        $normalized = $file -replace "\\", "/"
+        if ($normalized -ne "docs/development/HANDOFF.md") {
+            throw "HEAD differs from Work commit '$WorkCommit' in more than just HANDOFF.md: $normalized. Only docs/development/HANDOFF.md may change after the work commit."
+        }
+    }
+}
+
 function Read-HandoffFields {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -98,6 +111,34 @@ function Read-HandoffFields {
         }
     }
     return $fields
+}
+
+function Read-PhaseFields {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "docs/development/CURRENT_PHASE.md is missing. Create it before handoff."
+    }
+
+    $fields = @{}
+    Get-Content $Path | ForEach-Object {
+        if ($_ -match "^([^:#][^:]+):\s*(.*)$") {
+            $fields[$Matches[1].Trim()] = $Matches[2].Trim()
+        }
+    }
+    return $fields
+}
+
+function Read-ContractBranchPrefixes {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "docs/architecture/architecture-contract.json is missing. Cannot verify branch prefix."
+    }
+
+    $raw = Get-Content $Path -Raw
+    $json = $raw | ConvertFrom-Json
+    return $json.branch_prefixes
 }
 
 function Assert-HandoffMatchesRepository {
@@ -124,6 +165,68 @@ function Assert-HandoffMatchesRepository {
     }
     Assert-GitCommitExists $workCommit
     Assert-GitCommitIsAncestor $workCommit
+    Assert-HandoffOnlyChangesHandoff $workCommit
+}
+
+function Assert-WriterBranchCrossCheck {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$HandoffFields,
+        [Parameter(Mandatory = $true)][hashtable]$PhaseFields,
+        [Parameter(Mandatory = $true)][string]$BranchName,
+        [Parameter(Mandatory = $true)][object]$BranchPrefixes
+    )
+
+    # 1. HANDOFF Branch == actual git branch == CURRENT_PHASE Current branch
+    $phaseBranch = $PhaseFields["Current branch"]
+    if ($phaseBranch -ne $BranchName) {
+        throw "CURRENT_PHASE Current branch is '$phaseBranch', expected '$BranchName'."
+    }
+
+    # 2. HANDOFF Writer == CURRENT_PHASE Current writer
+    $handoffWriter = $HandoffFields["Writer"]
+    $phaseWriter = $PhaseFields["Current writer"]
+    if (-not $handoffWriter) {
+        throw "HANDOFF does not contain a 'Writer:' field."
+    }
+    if (-not $phaseWriter) {
+        throw "CURRENT_PHASE does not contain a 'Current writer:' field."
+    }
+    if ($handoffWriter -ne $phaseWriter) {
+        throw "HANDOFF Writer '$handoffWriter' != CURRENT_PHASE Current writer '$phaseWriter'."
+    }
+
+    # 3. Branch must start with the writer's registered prefix
+    $writer = $phaseWriter
+    $prefixEntry = $BranchPrefixes.PSObject.Properties | Where-Object { $_.Name -eq $writer }
+    if (-not $prefixEntry) {
+        throw "Writer '$writer' is not registered in architecture-contract.json branch_prefixes."
+    }
+    $prefix = $prefixEntry.Value
+
+    # Handle human/<name>/ prefix
+    if ($prefix -match "<name>") {
+        $prefixBase = $prefix -replace "<name>", ""
+        if (-not $BranchName.StartsWith($prefixBase)) {
+            throw "Branch '$BranchName' does not start with human prefix '$prefix'."
+        }
+        $rest = $BranchName.Substring($prefixBase.Length)
+        $namePart = ($rest -split "/")[0]
+        if (-not $namePart -or $namePart -like "phase-*") {
+            throw "Human branch '$BranchName' is missing the <name> segment."
+        }
+    } else {
+        if (-not $BranchName.StartsWith($prefix)) {
+            throw "Branch '$BranchName' does not start with prefix '$prefix' for writer '$writer'."
+        }
+    }
+
+    # 4. Reject research/ branches unless CURRENT_PHASE explicitly marks them
+    if ($BranchName -match "^research/") {
+        $phaseType = $PhaseFields["Phase type"]
+        if ($phaseType -ne "non-implementation research") {
+            throw "Research branch '$BranchName' requires CURRENT_PHASE 'Phase type: non-implementation research'."
+        }
+    }
 }
 
 function Assert-NoGeneratedUntrackedArtifacts {
@@ -170,14 +273,21 @@ try {
     Assert-HeadMatchesRemote $Branch
 
     $handoffPath = Join-Path $repoRoot "docs/development/HANDOFF.md"
+    $phasePath = Join-Path $repoRoot "docs/development/CURRENT_PHASE.md"
+    $contractPath = Join-Path $repoRoot "docs/architecture/architecture-contract.json"
+
     $fields = Read-HandoffFields $handoffPath
+    $phaseFields = Read-PhaseFields $phasePath
+    $branchPrefixes = Read-ContractBranchPrefixes $contractPath
 
     Assert-HandoffMatchesRepository $fields $Branch
+    Assert-WriterBranchCrossCheck $fields $phaseFields $Branch $branchPrefixes
     Assert-NoGeneratedUntrackedArtifacts $repoRoot
 
     $localHead = Get-FullSha "HEAD"
     $remoteHead = Get-FullSha "github/$Branch"
     Write-Host "Branch: $Branch"
+    Write-Host "Writer: $($fields["Writer"])"
     Write-Host "Local HEAD: $localHead"
     Write-Host "Remote HEAD: $remoteHead"
     Write-Host "Handoff verification passed"

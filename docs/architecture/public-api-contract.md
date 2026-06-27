@@ -1,6 +1,6 @@
 # Public API Contract
 
-Status: Frozen (C2-RC, based on PR #20 architecture audit)
+Status: Proposed — frozen by merge of the C2-RC PR
 Source: `docs/architecture/src-migration-roadmap.md` (API Stability Tiers)
 
 ## 1. API Tiers
@@ -25,7 +25,7 @@ under Plan A (conservative classification — see ADR-002).
 | `from lingshu.auth import AuthenticatorChain, JwtBearerAuthenticator` | **Experimental** | Chain and concrete-implementation symbols. Public but provisional; subject to signature changes. |
 | `from lingshu.auth import Auth, token_required` | **Does NOT exist** | `lingshu.auth` does not export these. |
 | `from lingshu.middleware.auth import Auth, token_required` | **Legacy** | Legacy JWT auth class. Gets compat shim in R1. |
-| `from lingshu.extensions.auth import Auth, token_required` | **Legacy facade** | Thin re-export of `middleware.auth`. |
+| `from lingshu.extensions.auth import Auth, token_required` | **Legacy** | Legacy facade (thin re-export of `middleware.auth`). |
 | `from app import Auth` | **Project compat entry** | Project-generated re-export. Updated in R6 scaffold. |
 
 ## 3. Classification: Tenant API
@@ -55,7 +55,8 @@ under Plan A (conservative classification — see ADR-002).
 | Import path | Tier | Notes |
 |---|---|---|
 | `from lingshu.middleware.auth import Auth` | Legacy → Deprecated | Compat shim in R1. |
-| `from lingshu.middleware.cache import Cache` | Internal | Zero consumers. Classified before deletion. |
+| `from lingshu.middleware.cache import Cache` | Legacy | Legacy facade. No external consumer evidence. |
+| `from lingshu.extensions.cache import Cache` | Legacy | Thin re-export of middleware.cache. |
 | `from lingshu.system.auth.principal import Principal` | Internal | Used by facade, not documented as public. |
 | `from lingshu.system.sanic_adapter import *` | Internal | Compat re-export after R2 split. |
 

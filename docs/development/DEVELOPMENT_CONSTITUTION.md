@@ -1,6 +1,6 @@
 # LingShu Development Constitution V1
 
-Status: Active
+Status: Proposed — becomes Active when the C2-RC PR is merged
 Version: 1.0
 Phase established: C2-RC (Issue #21, PR pending)
 
@@ -29,7 +29,9 @@ It does NOT govern:
 
 - Holds final authority over project scope and priorities.
 - Holds final merge authority for all pull requests.
-- May override any decision, including this constitution, with explicit written instruction.
+- May approve deviations from this constitution. A deviation only becomes a
+  repository rule after being recorded via the Deviation Approval process
+  (§12) in a GitHub Issue and an ADR or constitution update.
 
 ### 2.2 Xiao Gu (Architect)
 
@@ -55,15 +57,26 @@ It does NOT govern:
   code cannot declare acceptance.
 - Only Xiao Gu can declare acceptance. Only the user can merge.
 
-## 3. Sources Of Truth (Priority Order)
+## 3. Sources Of Truth
 
-1. **GitHub Issue** for the current phase — defines scope, deliverables, tests.
-2. **Remote branch** on `github` — the authoritative code state.
-3. **Pull Request** and its review comments — review findings and decisions.
-4. **This constitution** — stable development rules.
-5. **`docs/development/CURRENT_PHASE.md`** — current phase tracking.
-6. **`docs/architecture/architecture-contract.json`** — machine-readable rules.
-7. **ADRs in `docs/decisions/`** — architectural decision records.
+There are five categories of truth, each authoritative within its domain:
+
+1. **Governance authority** — This constitution + Accepted ADRs.
+   The constitution and accepted ADRs define stable development rules.
+   An Issue does NOT automatically override them.
+
+2. **Phase scope** — The current GitHub Issue.
+   Defines what work is in scope for this phase.
+
+3. **Code state** — The remote branch on `github`.
+   The authoritative code state at any point in time.
+
+4. **Review state** — Pull Request and its review comments.
+   Review findings, change requests, and acceptance decisions.
+
+5. **Dynamic handoff** — `docs/development/CURRENT_PHASE.md` and
+   `docs/development/HANDOFF.md`.
+   Current writer, branch, progress, and next-action tracking.
 
 **Chat history, model memory, and session context are NOT sources of truth.**
 If a rule is not in the above artifacts, it does not exist.
@@ -75,8 +88,8 @@ If a rule is not in the above artifacts, it does not exist.
 - A deviation from the constitution requires an approved **ADR or Deviation
   record** referenced in the Issue.
 - The user can authorize a deviation verbally or in chat, but it only becomes
-  a repository fact after being recorded in both the Issue **and** an ADR or
-  constitution update.
+  a repository fact after being recorded via the Deviation Approval process
+  (§12) in both a GitHub Issue **and** an ADR or constitution update.
 - Chat instructions (including model session context) are NOT permanent
   repository rules.
 - If an Issue conflicts with the constitution and no approved deviation ADR
@@ -135,12 +148,10 @@ Rules:
    its prefix.
 2. **Xiao Gu is NOT an implementation branch prefix.** Xiao Gu performs
    planning, review, and acceptance — never writes implementation branches.
-3. The current writer is **qwen**; the current branch is
-   `qwen/phase-c2-rc-development-constitution`.
-4. **When switching developers:** the old developer must test, update HANDOFF,
+3. **When switching developers:** the old developer must test, update HANDOFF,
    commit, push, and stop writing. The new developer must create a new
    prefix branch and record the inherited baseline in HANDOFF.
-5. **Without explicit Issue approval**, no developer may continue writing
+4. **Without explicit Issue approval**, no developer may continue writing
    another developer's branch.
 
 ### 5.2 PR Creation

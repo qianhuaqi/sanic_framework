@@ -3,6 +3,7 @@
 Project: LingShu Framework
 Current phase: C2-RC - Development Constitution V1 and Machine Boundary Tests
 Current branch: qwen/phase-c2-rc-development-constitution
+Current writer: qwen
 Current issue: #21
 Status: in progress
 Next phase allowed: no
@@ -51,3 +52,9 @@ This is a documentation and test phase — no production code changes.
 - Modifying auth, tenant, RoutePolicy, database, Model, or Sanic adapter behavior.
 - Starting R1–R6, C2.2B, or C3.
 - Adding third-party dependencies.
+
+## CLI Exception (Issue #21 approved)
+
+- Baseline `ed3ff04` lacks `app/v1/language/` directory.
+- This phase adds `app/v1/language/.gitkeep` as a minimal placeholder.
+- No runtime behavior change. No other `app/**` files modified.

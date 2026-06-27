@@ -68,12 +68,10 @@ Rules:
    its prefix.
 2. **Xiao Gu is NOT an implementation branch prefix.** Xiao Gu performs
    planning, review, and acceptance — never writes implementation branches.
-3. The current writer is **qwen**; the current branch is
-   `qwen/phase-c2-rc-development-constitution`.
-4. **When switching developers:** the old developer must test, update HANDOFF,
+3. **When switching developers:** the old developer must test, update HANDOFF,
    commit, push, and stop writing. The new developer must create a new
    prefix branch and record the inherited baseline in HANDOFF.
-5. **Without explicit Issue approval**, no developer may continue writing
+4. **Without explicit Issue approval**, no developer may continue writing
    another developer's branch.
 
 ## Prohibited Git Actions

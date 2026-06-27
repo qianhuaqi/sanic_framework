@@ -6,6 +6,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = "qwen/phase-c2-rc-development-constitution"
+WRITER = "qwen"
 
 
 def _read(relative_path: str) -> str:
@@ -36,16 +37,54 @@ def _powershell(script: Path, cwd: Path, branch: str = BRANCH) -> subprocess.Com
     )
 
 
-def _write_handoff(repo: Path, work_commit: str, branch: str = BRANCH):
+def _write_current_phase(repo: Path, branch: str = BRANCH, writer: str = WRITER):
+    content = (
+        "# Current Phase\n\n"
+        f"Current branch: {branch}\n"
+        f"Current writer: {writer}\n"
+        "Current issue: #21-test\n"
+        "Status: in progress\n"
+        "Next phase allowed: no\n\n"
+        "## Test\n"
+        "- test\n"
+    )
+    phase_file = repo / "docs" / "development" / "CURRENT_PHASE.md"
+    phase_file.parent.mkdir(parents=True, exist_ok=True)
+    phase_file.write_text(content, encoding="utf-8")
+
+
+def _write_contract(repo: Path):
+    content = (
+        "{\n"
+        '  "schema_version": "1.0.0",\n'
+        '  "constitution_version": "1.0",\n'
+        '  "status": "proposed",\n'
+        '  "effective_on": "c2-rc-pr-merge",\n'
+        '  "branch_prefixes": {\n'
+        '    "codex": "codex/phase-",\n'
+        '    "qwen": "qwen/phase-",\n'
+        '    "gemini": "gemini/phase-",\n'
+        '    "glm": "glm/phase-",\n'
+        '    "claude": "claude/phase-",\n'
+        '    "human": "human/<name>/phase-"\n'
+        "  }\n"
+        "}\n"
+    )
+    contract_file = repo / "docs" / "architecture" / "architecture-contract.json"
+    contract_file.parent.mkdir(parents=True, exist_ok=True)
+    contract_file.write_text(content, encoding="utf-8")
+
+
+def _write_handoff(repo: Path, work_commit: str, branch: str = BRANCH, writer: str = WRITER):
     """Write the canonical handoff to docs/development/HANDOFF.md only.
 
-    docs/codex/HANDOFF.md is written as a compatibility pointer — the scripts
-    no longer read from it.
+    Does NOT write docs/codex/HANDOFF.md — that is written separately.
     """
     content = (
         "# Development Handoff\n\n"
         "Updated at: 2026-06-26\n"
         "Location: office\n"
+        f"Writer: {writer}\n"
         f"Branch: {branch}\n"
         "Worktree: clean\n"
         f"Work commit: {work_commit}\n\n"
@@ -70,7 +109,9 @@ def _write_handoff(repo: Path, work_commit: str, branch: str = BRANCH):
     dev_handoff.parent.mkdir(parents=True, exist_ok=True)
     dev_handoff.write_text(content, encoding="utf-8")
 
-    # docs/codex/HANDOFF.md is only a compatibility pointer, NOT the fact source
+
+def _write_codex_pointers(repo: Path):
+    """Write compatibility pointers for codex docs."""
     codex_handoff = repo / "docs" / "codex" / "HANDOFF.md"
     codex_handoff.parent.mkdir(parents=True, exist_ok=True)
     codex_handoff.write_text(
@@ -93,17 +134,25 @@ def _prepare_handoff_repo(tmp_path: Path) -> Path:
     (work / "README.md").write_text("handoff test\n", encoding="utf-8")
     _run(["git", "add", "README.md"], cwd=work)
     _run(["git", "commit", "-m", "initial"], cwd=work)
-    work_commit = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
 
     (work / "scripts").mkdir()
     shutil.copy2(ROOT / "scripts" / "resume-work.ps1", work / "scripts" / "resume-work.ps1")
     shutil.copy2(ROOT / "scripts" / "verify-handoff.ps1", work / "scripts" / "verify-handoff.ps1")
 
-    # Ensure docs/development/ exists before writing handoff
     (work / "docs" / "development").mkdir(parents=True, exist_ok=True)
-    _write_handoff(work, work_commit)
+    _write_current_phase(work)
+    _write_contract(work)
+    _write_codex_pointers(work)
     _run(["git", "add", "scripts", "docs"], cwd=work)
-    _run(["git", "commit", "-m", "add handoff"], cwd=work)
+    _run(["git", "commit", "-m", "add scripts and phase docs"], cwd=work)
+
+    # Work commit = last implementation commit (scripts + docs, but NOT HANDOFF)
+    work_commit = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+
+    # Now write HANDOFF only and commit as the handoff-only commit
+    _write_handoff(work, work_commit)
+    _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "finalize handoff"], cwd=work)
     _run(["git", "push", "-u", "github", BRANCH], cwd=work)
     return work
 
@@ -134,18 +183,14 @@ def test_handoff_scripts_avoid_disallowed_git_operations():
 
 def test_verify_handoff_passes_in_real_git_repo(tmp_path):
     work = _prepare_handoff_repo(tmp_path)
-
     result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
-
     assert result.returncode == 0, result.stderr
     assert "Handoff verification passed" in result.stdout
 
 
 def test_resume_work_passes_in_real_git_repo(tmp_path):
     work = _prepare_handoff_repo(tmp_path)
-
     result = _powershell(work / "scripts" / "resume-work.ps1", work)
-
     assert result.returncode == 0, result.stderr
     assert f"Current branch: {BRANCH}" in result.stdout
     assert "HANDOFF.md:" in result.stdout
@@ -154,9 +199,7 @@ def test_resume_work_passes_in_real_git_repo(tmp_path):
 def test_resume_work_fails_when_worktree_is_dirty(tmp_path):
     work = _prepare_handoff_repo(tmp_path)
     (work / "dirty.txt").write_text("dirty\n", encoding="utf-8")
-
     result = _powershell(work / "scripts" / "resume-work.ps1", work)
-
     assert result.returncode != 0
     assert "Worktree is dirty" in result.stderr
 
@@ -166,50 +209,34 @@ def test_verify_handoff_fails_when_local_head_differs_from_remote(tmp_path):
     (work / "local.txt").write_text("local only\n", encoding="utf-8")
     _run(["git", "add", "local.txt"], cwd=work)
     _run(["git", "commit", "-m", "local only"], cwd=work)
-
     result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
-
     assert result.returncode != 0
     assert "does not match" in result.stderr
 
 
 def test_verify_handoff_fails_when_handoff_is_missing(tmp_path):
-    """Deleting docs/development/HANDOFF.md must cause fail-closed."""
     work = _prepare_handoff_repo(tmp_path)
     (work / "docs" / "development" / "HANDOFF.md").unlink()
     _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
     _run(["git", "commit", "-m", "remove handoff"], cwd=work)
     _run(["git", "push", "github", BRANCH], cwd=work)
-
     result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
-
     assert result.returncode != 0
     assert "docs/development/HANDOFF.md is missing" in result.stderr
 
 
 def test_scripts_work_with_only_dev_handoff_and_codex_pointer(tmp_path):
-    """Scripts must work when docs/development/HANDOFF.md exists and
-    docs/codex/HANDOFF.md is just a compatibility pointer."""
     work = _prepare_handoff_repo(tmp_path)
-
-    # The _write_handoff helper already sets up this exact scenario.
-    # Verify both scripts pass.
     verify_result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
     assert verify_result.returncode == 0, verify_result.stderr
-
     resume_result = _powershell(work / "scripts" / "resume-work.ps1", work)
     assert resume_result.returncode == 0, resume_result.stderr
     assert f"Current branch: {BRANCH}" in resume_result.stdout
 
 
 def test_deleting_dev_handoff_causes_fail_closed(tmp_path):
-    """If docs/development/HANDOFF.md is removed, scripts must fail even
-    if docs/codex/HANDOFF.md still has content (it is not the fact source)."""
     work = _prepare_handoff_repo(tmp_path)
-
-    # Remove the real handoff but keep a non-pointer codex copy
     (work / "docs" / "development" / "HANDOFF.md").unlink()
-    # Write a fake full handoff to codex path (should be ignored by scripts)
     fake_codex = work / "docs" / "codex" / "HANDOFF.md"
     fake_codex.write_text(
         "# Development Handoff\n\n"
@@ -221,7 +248,6 @@ def test_deleting_dev_handoff_causes_fail_closed(tmp_path):
     _run(["git", "add", "docs"], cwd=work)
     _run(["git", "commit", "-m", "remove dev handoff, keep fake codex"], cwd=work)
     _run(["git", "push", "github", BRANCH], cwd=work)
-
     result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
     assert result.returncode != 0
     assert "docs/development/HANDOFF.md is missing" in result.stderr
@@ -233,11 +259,118 @@ def test_verify_handoff_fails_when_work_commit_is_not_ancestor(tmp_path):
     _run(["git", "add", "docs"], cwd=work)
     _run(["git", "commit", "-m", "invalid work commit"], cwd=work)
     _run(["git", "push", "github", BRANCH], cwd=work)
-
     result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
-
     assert result.returncode != 0
     assert "does not exist" in result.stderr or "not an ancestor" in result.stderr
+
+
+def test_verify_handoff_fails_when_writer_branch_mismatch(tmp_path):
+    """writer=qwen but branch=codex/... must fail."""
+    work = _prepare_handoff_repo(tmp_path)
+
+    # Rewrite CURRENT_PHASE with mismatched writer/branch
+    _write_current_phase(work, branch="codex/phase-test", writer="qwen")
+    _run(["git", "add", "docs/development/CURRENT_PHASE.md"], cwd=work)
+    _run(["git", "commit", "-m", "phase update"], cwd=work)
+
+    # New work_commit includes the phase change
+    new_wc = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+    _write_handoff(work, new_wc, branch="codex/phase-test", writer="qwen")
+    _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "handoff update"], cwd=work)
+    _run(["git", "switch", "-c", "codex/phase-test"], cwd=work)
+    _run(["git", "push", "-u", "github", "codex/phase-test"], cwd=work)
+
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work, branch="codex/phase-test")
+    assert result.returncode != 0, result.stderr
+    assert "does not start with prefix" in result.stderr
+
+
+def test_verify_handoff_fails_when_writer_not_registered(tmp_path):
+    """An unregistered writer must cause fail-closed."""
+    work = _prepare_handoff_repo(tmp_path)
+    _write_current_phase(work, writer="unknowndev")
+    _run(["git", "add", "docs/development/CURRENT_PHASE.md"], cwd=work)
+    _run(["git", "commit", "-m", "phase update"], cwd=work)
+    new_wc = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+    _write_handoff(work, new_wc, writer="unknowndev")
+    _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "handoff update"], cwd=work)
+    _run(["git", "push", "github", BRANCH], cwd=work)
+
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
+    assert result.returncode != 0
+    assert "not registered" in result.stderr
+
+
+def test_verify_handoff_fails_when_handoff_writer_differs_from_phase(tmp_path):
+    """HANDOFF Writer and CURRENT_PHASE Current writer must match."""
+    work = _prepare_handoff_repo(tmp_path)
+    new_wc = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+    _write_handoff(work, new_wc, writer="codex")
+    _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "writer mismatch"], cwd=work)
+    _run(["git", "push", "github", BRANCH], cwd=work)
+
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
+    assert result.returncode != 0
+    assert "!=" in result.stderr
+
+
+def test_verify_handoff_fails_when_handoff_branch_differs_from_phase(tmp_path):
+    """HANDOFF Branch and CURRENT_PHASE Current branch must match."""
+    work = _prepare_handoff_repo(tmp_path)
+    hc = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+    (work / "docs" / "development" / "HANDOFF.md").write_text(
+        f"# Development Handoff\n\nWriter: qwen\nBranch: qwen/phase-wrong\n"
+        f"Worktree: clean\nWork commit: {hc}\n",
+        encoding="utf-8",
+    )
+    _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "branch mismatch"], cwd=work)
+    _run(["git", "push", "github", BRANCH], cwd=work)
+
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
+    assert result.returncode != 0
+
+
+def test_verify_handoff_fails_when_extra_files_after_work_commit(tmp_path):
+    """HEAD..Work commit must only change docs/development/HANDOFF.md."""
+    work = _prepare_handoff_repo(tmp_path)
+    # The initial setup already has the scripts commit as the HEAD.
+    # Add a non-HANDOFF change after the work commit.
+    (work / "extra.txt").write_text("extra\n", encoding="utf-8")
+    _run(["git", "add", "extra.txt"], cwd=work)
+    _run(["git", "commit", "-m", "extra file"], cwd=work)
+    _run(["git", "push", "github", BRANCH], cwd=work)
+
+    # Now update HANDOFF with a handoff commit (so HEAD != work commit)
+    hc = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+    _write_handoff(work, hc)
+    _run(["git", "add", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "update handoff only"], cwd=work)
+    _run(["git", "push", "github", BRANCH], cwd=work)
+
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
+    # Should pass because the diff from work_commit to HEAD only contains HANDOFF.md
+    assert result.returncode == 0, result.stderr
+
+
+def test_verify_handoff_fails_when_non_handoff_file_in_work_to_head_diff(tmp_path):
+    """If work_commit..HEAD contains a non-HANDOFF file, must fail."""
+    work = _prepare_handoff_repo(tmp_path)
+    wc = _run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+
+    # Add a non-HANDOFF file AND update HANDOFF (so diff has 2 files)
+    (work / "extra2.txt").write_text("extra2\n", encoding="utf-8")
+    _write_handoff(work, wc)
+    _run(["git", "add", "extra2.txt", "docs/development/HANDOFF.md"], cwd=work)
+    _run(["git", "commit", "-m", "extra + handoff update"], cwd=work)
+    _run(["git", "push", "github", BRANCH], cwd=work)
+
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work)
+    assert result.returncode != 0
+    assert "HANDOFF.md" in result.stderr
 
 
 def test_handoff_scripts_use_github_remote_and_fail_closed_checks():
@@ -249,14 +382,14 @@ def test_handoff_scripts_use_github_remote_and_fail_closed_checks():
     assert "Assert-CleanWorktree" in combined
     assert "Assert-HeadMatchesRemote" in combined
     assert "docs/development/HANDOFF.md is missing" in combined
-    assert "status\", \"--porcelain\"" in combined
-    assert "\"rev-parse\"" in verify
-    assert "github/$Branch" in verify
+    assert "Assert-WriterBranchCrossCheck" in combined
+    assert "Assert-HandoffOnlyChangesHandoff" in combined
+    assert "branch_prefixes" in combined
+    assert "Current writer" in combined
 
 
 def test_agents_records_single_writer_rule_and_sources_of_truth():
     agents = _read("AGENTS.md")
-
     assert "github" in agents
     assert "one writer at a time" in agents.lower()
     assert "Sources Of Truth" in agents
@@ -271,17 +404,16 @@ def test_current_phase_and_handoff_docs_exist_with_current_context():
 
     assert "Current phase: C2-RC" in current_phase
     assert "qwen/phase-c2-rc-development-constitution" in current_phase
+    assert "Current writer: qwen" in current_phase
     assert "Current issue: #21" in current_phase
     assert "Next phase allowed: no" in current_phase
     assert "Branch:" in handoff
+    assert "Writer:" in handoff
     assert "Worktree:" in handoff
-    assert "Local HEAD:" not in handoff
-    assert "Remote HEAD:" not in handoff
 
 
 def test_readme_contains_cross_device_handoff_flow():
     readme = _read("README.md")
-
     assert "## Cross-Device Handoff" in readme
     assert "## Local Development Setup" in readme
     assert "scripts\\setup-dev.ps1" in readme
@@ -295,7 +427,6 @@ def test_readme_contains_cross_device_handoff_flow():
 
 def test_scaffold_readme_contains_install_and_startup_guidance():
     scaffold_readme = _read("src/lingshu/scaffold/README.md.j2")
-
     assert 'python -m pip install -e ".[dev]"' in scaffold_readme
     assert "python run.py" in scaffold_readme
     assert "working directory to the project root" in scaffold_readme
@@ -315,7 +446,6 @@ def test_handoff_docs_do_not_contain_obvious_secret_examples():
         "scripts/verify-handoff.ps1",
     ]
     combined = "\n".join(_read(path) for path in paths)
-
     risky_patterns = [
         r"gh[pousr]_[A-Za-z0-9_]{20,}",
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
@@ -323,14 +453,12 @@ def test_handoff_docs_do_not_contain_obvious_secret_examples():
         r"(?i)codex[_-]?token\s*=",
         r"(?i)password\s*=\s*['\"][^'\"]+['\"]",
     ]
-
     assert [pattern for pattern in risky_patterns if re.search(pattern, combined)] == []
 
 
 def test_old_codex_docs_are_compatibility_pointers():
     codex_phase = _read("docs/codex/CURRENT_PHASE.md")
     codex_handoff = _read("docs/codex/HANDOFF.md")
-
     assert "docs/development/CURRENT_PHASE.md" in codex_phase
     assert "docs/development/HANDOFF.md" in codex_handoff
     assert "Compatibility Pointer" in codex_phase

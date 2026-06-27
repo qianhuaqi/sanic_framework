@@ -1,6 +1,6 @@
 # Dependency Rules
 
-Status: Frozen (C2-RC, based on PR #20 architecture audit)
+Status: Proposed — frozen by merge of the C2-RC PR
 Source: `docs/architecture/src-target-boundaries.md` §4
 
 ## 1. Current Dependency State (Pre-Refactor)

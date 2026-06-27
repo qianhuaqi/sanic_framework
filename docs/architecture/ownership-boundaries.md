@@ -1,6 +1,6 @@
 # Ownership Boundaries
 
-Status: Frozen (C2-RC, based on PR #20 architecture audit)
+Status: Proposed — frozen by merge of the C2-RC PR
 Source: `docs/architecture/src-convergence-audit.md` §1–§2
 
 ## 1. Framework-Owned Paths

@@ -1,6 +1,8 @@
 {
   "schema_version": "1.0.0",
   "constitution_version": "1.0",
+  "status": "proposed",
+  "effective_on": "c2-rc-pr-merge",
   "branch_prefixes": {
     "codex": "codex/phase-",
     "qwen": "qwen/phase-",
@@ -9,8 +11,6 @@
     "claude": "claude/phase-",
     "human": "human/<name>/phase-"
   },
-  "current_writer": "qwen",
-  "current_branch": "qwen/phase-c2-rc-development-constitution",
   "research_branch_policy": "research/<slug> only for Issue-approved non-implementation research tasks",
   "writer_handoff_policy": "When switching developers: old developer must test, update HANDOFF, commit, push, and stop writing. New developer must create a new prefix branch and record the inherited baseline in HANDOFF. Without explicit Issue approval, no developer may continue writing another developer's branch.",
   "ownership_roots": {
@@ -88,16 +88,26 @@
     {
       "import_path": "lingshu.extensions.auth",
       "symbols": ["Auth", "token_required"],
-      "tier": "Legacy facade",
+      "tier": "Legacy",
+      "kind": "facade",
       "compat_target": "compat/auth.py",
       "notes": "Thin re-export of middleware.auth."
     },
     {
       "import_path": "lingshu.middleware.cache",
       "symbols": ["Cache"],
-      "tier": "Internal",
+      "tier": "Legacy",
+      "kind": "facade",
       "compat_target": "compat/cache.py",
-      "notes": "Zero consumers in repo. Classified before deletion."
+      "notes": "Legacy cache facade. No external consumer evidence. Managed as Legacy."
+    },
+    {
+      "import_path": "lingshu.extensions.cache",
+      "symbols": ["Cache"],
+      "tier": "Legacy",
+      "kind": "facade",
+      "compat_target": "compat/cache.py",
+      "notes": "Thin re-export of middleware.cache. Legacy facade."
     },
     {
       "import_path": "lingshu.middleware.sign",
@@ -108,7 +118,7 @@
     },
     {
       "import_path": "lingshu.middleware.maintenance",
-      "symbols": ["check_maintenance"],
+      "symbols": ["maintenance_required"],
       "tier": "Legacy",
       "compat_target": "compat/maintenance.py",
       "notes": "Legacy maintenance decorator."
@@ -146,7 +156,9 @@
   "target_layers": {
     "core": {
       "path": "src/lingshu/core",
-      "may_import": ["stdlib"],
+      "allowed_stdlib": true,
+      "allowed_lingshu_prefixes": [],
+      "allowed_third_party_prefixes": [],
       "forbidden_import_prefixes": [
         "sanic",
         "jwt",
@@ -159,12 +171,20 @@
         "lingshu.data",
         "lingshu.compat",
         "lingshu.middleware",
-        "lingshu.system"
+        "lingshu.system",
+        "lingshu.exception",
+        "lingshu.auth",
+        "lingshu.tenant",
+        "lingshu.router",
+        "lingshu.model",
+        "lingshu.app"
       ]
     },
     "security_auth": {
       "path": "src/lingshu/security/auth",
-      "may_import": ["stdlib", "lingshu.core", "jwt"],
+      "allowed_stdlib": true,
+      "allowed_lingshu_prefixes": ["lingshu.core"],
+      "allowed_third_party_prefixes": ["jwt"],
       "forbidden_import_prefixes": [
         "sanic",
         "lingshu.adapters",
@@ -176,7 +196,9 @@
     },
     "contrib_tenant": {
       "path": "src/lingshu/contrib/tenant",
-      "may_import": ["stdlib", "lingshu.core", "lingshu.security.auth"],
+      "allowed_stdlib": true,
+      "allowed_lingshu_prefixes": ["lingshu.core", "lingshu.security.auth"],
+      "allowed_third_party_prefixes": [],
       "forbidden_import_prefixes": [
         "sanic",
         "lingshu.adapters",
@@ -187,7 +209,9 @@
     },
     "data": {
       "path": "src/lingshu/data",
-      "may_import": ["stdlib", "lingshu.core", "aiomysql", "motor", "redis"],
+      "allowed_stdlib": true,
+      "allowed_lingshu_prefixes": ["lingshu.core"],
+      "allowed_third_party_prefixes": ["aiomysql", "motor", "redis"],
       "forbidden_import_prefixes": [
         "sanic",
         "lingshu.system.proxies",
@@ -199,7 +223,9 @@
     },
     "adapters_sanic": {
       "path": "src/lingshu/adapters/sanic",
-      "may_import": ["stdlib", "lingshu.core", "lingshu.security.auth", "lingshu.contrib.tenant", "sanic"],
+      "allowed_stdlib": true,
+      "allowed_lingshu_prefixes": ["lingshu.core", "lingshu.security.auth", "lingshu.contrib.tenant"],
+      "allowed_third_party_prefixes": ["sanic"],
       "forbidden_import_prefixes": [
         "lingshu.data",
         "lingshu.compat",
@@ -208,7 +234,9 @@
     },
     "compat": {
       "path": "src/lingshu/compat",
-      "may_import": ["legacy implementations"],
+      "allowed_stdlib": true,
+      "allowed_lingshu_prefixes": ["legacy implementations"],
+      "allowed_third_party_prefixes": [],
       "forbidden_import_prefixes": []
     }
   },

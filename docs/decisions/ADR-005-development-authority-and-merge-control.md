@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (C2-RC, Issue #21)
+Proposed — accepted by merge of the C2-RC PR
 
 ## Context
 
