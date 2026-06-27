@@ -1,43 +1,46 @@
-# LingShu Framework 总体架构设计总纲（Blueprint v0.4）
+# LingShu Framework 总体架构设计总纲（Blueprint v0.6）
 
 - 设计负责人：小顾
 - 产品决策人：多多
-- 状态：总体设计草案，待多多确认并冻结
+- 状态：总体设计候选版，待多多确认并冻结
 - GitHub Issue：#25
 - 设计分支：`research/lingshu-framework-blueprint`
 - 唯一权威文件：`docs/architecture/LINGSHU_FRAMEWORK_BLUEPRINT.md`
-- 变更规则：任何方向变化必须通过 Issue、ADR、Git 提交和多多确认；聊天记录不得覆盖本文件
+- 变更规则：任何架构变化必须经过 Issue、ADR、Git 提交和多多确认；聊天记录不得覆盖本文件
 
 ---
 
 ## 1. 根本定位
 
-LingShu 是一个完全独立、自主可控的 Python Web/API Framework，不是 Sanic、FastAPI、Flask、Django 或 Starlette 的二次封装，也不承担当前旧实现的兼容义务。
+LingShu 是一个完全独立、自主可控的 Python Web/API Framework，不是 Sanic、FastAPI、Flask、Django、Starlette 或其他 Web Framework 的二次封装，也不承担当前旧实现的兼容义务。
 
 LingShu 自己定义并控制：
 
 - Application Kernel；
+- Application Plan；
 - HTTP Runtime；
 - Request、Response、Router、Middleware；
 - Native HTTP Server；
+- Service / Layer / Permit；
+- Typed Extractor 与 Schema；
 - Extension Protocol；
 - 生命周期、依赖作用域、取消和清理；
-- 错误、安全、调试和可观测合同；
+- Supervision、Health、Telemetry；
+- Request ID 与每请求 Runtime Record；
 - CLI、Scaffold 和官方扩展生态。
 
 当前仓库中的旧代码只作为需求、测试和实现素材。凡是与本 Blueprint 冲突的代码，在 1.0 前可以重写或删除，不建立永久兼容层。
 
-### 1.1 目标
-
-LingShu 的核心目标是：
+### 1.1 核心目标
 
 1. 稳定：生命周期明确、资源可回滚、取消不泄漏；
 2. 安全：从 HTTP 解析层拒绝歧义和恶意输入；
 3. 强大：具备完整应用内核、HTTP Runtime、原生服务器和扩展生态；
-4. 可调试：每次请求可以凭 Request ID 还原完整执行过程；
+4. 可调试：每次请求可凭 Request ID 还原完整执行过程；
 5. 可扩展：Auth、Tenant、RBAC、Data、Cache、i18n 等独立安装；
-6. 可验证：所有关键行为都有合同测试、协议测试和安全测试；
-7. 可维护：Python 版本和平台差异集中处理，不污染业务代码。
+6. 可验证：关键行为具备合同、协议、压力和安全测试；
+7. 可解释：路由、依赖、配置、Layer、Schema 和错误来源均可解释；
+8. 可维护：Python 版本和平台差异集中处理，不污染业务代码。
 
 ### 1.2 明确不做
 
@@ -47,11 +50,19 @@ LingShu 的核心目标是：
 - 不自造密码学算法、TLS 算法和证书验证；
 - 不为追求零依赖牺牲安全和正确性；
 - 1.0 首阶段不承诺完整 HTTP/2、HTTP/3；
-- 不以未经测试的极限性能代替稳定性和安全性。
+- 不以未经测试的极限性能代替稳定性和安全性；
+- 不允许运行时全量反射扫描和隐式自动装配；
+- 不允许无限自动重试、无限队列和进程级可变全局状态。
 
 ---
 
-## 2. 总体架构
+## 2. 最高架构原则
+
+### 2.1 机制与政策分离
+
+Core 只提供稳定机制，不提供 JWT、Tenant、RBAC、数据库、ORM、Redis 等具体政策。
+
+### 2.2 依赖单向
 
 ```text
 Project Application
@@ -65,48 +76,92 @@ LingShu Application Kernel
 LingShu Native Server
 ```
 
-包依赖方向：
+Core 不得反向依赖 HTTP、Server、Record 或任何扩展。
 
-```text
-lingshu_core
+### 2.3 显式安装
 
-lingshu_http       → lingshu_core
-lingshu_server     → lingshu_core + lingshu_http
-lingshu_cli        → lingshu_core
-lingshu            → lingshu_core + lingshu_http + lingshu_server + lingshu_cli
+禁止 import-time 注册、建连、启动任务、修改全局 Registry 和读取项目环境变量。
 
-lingshu_auth       → lingshu_core + lingshu_http
-lingshu_tenant     → lingshu_core + lingshu_http
-lingshu_rbac       → lingshu_core + lingshu_http
-lingshu_data       → lingshu_core
-lingshu_cache      → lingshu_core
-lingshu_i18n       → lingshu_core
-lingshu_openapi    → lingshu_core + lingshu_http
-lingshu_observability → lingshu_core + lingshu_http
-```
+### 2.4 启动前编译
 
-Core 不得反向依赖 HTTP、Server 或任何扩展。
+路由、扩展 DAG、Provider Scope、Layer、Extractor、Schema、配置和安全策略必须编译为确定性的 Application Plan。请求热路径禁止重新扫描模块和类型签名。
+
+### 2.5 默认隔离
+
+App、Worker、ModuleContext、Request、Operation 和 Extension 状态必须隔离。能力只有显式导出才可跨边界共享。
+
+### 2.6 默认有界
+
+队列、连接、请求体、Header、任务、重试、缓存、调试记录、日志和磁盘均必须有限额。
+
+### 2.7 默认可追踪
+
+每一个业务请求必须拥有内部 Request ID 和独立 Runtime Record 目录。
 
 ---
 
-## 3. 单仓多包结构
+## 3. 仓库整体目录结构
+
+采用单仓多包结构：
 
 ```text
-packages/
-├── lingshu-core/
-├── lingshu-http/
-├── lingshu-server/
-├── lingshu-cli/
-├── lingshu-framework/
-├── lingshu-auth/
-├── lingshu-tenant/
-├── lingshu-rbac/
-├── lingshu-data/
-├── lingshu-cache/
-├── lingshu-i18n/
-├── lingshu-openapi/
-└── lingshu-observability/
+repo/
+├── pyproject.toml                 # 仓库级工具、测试和质量配置
+├── README.md
+├── CHANGELOG.md
+├── SECURITY.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── packages/
+│   ├── lingshu-core/
+│   ├── lingshu-http/
+│   ├── lingshu-record/
+│   ├── lingshu-server/
+│   ├── lingshu-cli/
+│   ├── lingshu-framework/
+│   ├── lingshu-auth/
+│   ├── lingshu-tenant/
+│   ├── lingshu-tenant-auth/
+│   ├── lingshu-rbac/
+│   ├── lingshu-data/
+│   ├── lingshu-sql/
+│   ├── lingshu-mysql/
+│   ├── lingshu-postgresql/
+│   ├── lingshu-mongo/
+│   ├── lingshu-cache/
+│   ├── lingshu-redis/
+│   ├── lingshu-i18n/
+│   ├── lingshu-openapi/
+│   ├── lingshu-observability/
+│   └── lingshu-resilience/
+├── templates/                     # CLI 项目与扩展模板
+├── examples/                      # 最小、完整、安全部署示例
+├── contract-tests/                # 官方/第三方扩展合同测试套件
+├── integration-tests/             # 跨包真实集成测试
+├── protocol-tests/                # HTTP 协议与恶意报文测试
+├── fuzz/                          # Parser、Header、URL、Multipart 等模糊测试
+├── benchmarks/                    # 路由、Parser、Pipeline、Record Writer 基准
+├── docs/
+│   ├── architecture/
+│   ├── decisions/
+│   ├── development/
+│   ├── guides/
+│   └── reference/
+├── scripts/
+└── runtime/                       # 本地运行数据，必须 Git ignore
 ```
+
+每个 Package 自己拥有：
+
+```text
+pyproject.toml
+README.md
+CHANGELOG.md
+src/<import_package>/
+tests/
+```
+
+多个 distribution 不得共同写同一个普通 Python package。只有 `lingshu-framework` 使用 `lingshu` 作为薄总入口；其他包使用独立 import package。
 
 默认安装：
 
@@ -114,195 +169,592 @@ packages/
 pip install lingshu-framework
 ```
 
-默认只包含 Core、HTTP Runtime、Native Server 和 CLI。Auth、Tenant、数据库、Redis 等按需安装。
+默认包含：
 
-多个 distribution 不得共同写同一个普通 Python package。各扩展使用独立 import package，例如：
+```text
+lingshu-core
+lingshu-http
+lingshu-record
+lingshu-server
+lingshu-cli
+```
+
+---
+
+## 4. 包依赖结构
 
 ```text
 lingshu_core
-lingshu_http
-lingshu_server
-lingshu_auth
-lingshu_tenant
+
+lingshu_http       → lingshu_core
+lingshu_record     → lingshu_core + lingshu_http
+lingshu_server     → lingshu_core + lingshu_http
+lingshu_cli        → lingshu_core
+lingshu            → core + http + record + server + cli
+
+lingshu_auth       → core + http
+lingshu_tenant     → core + http
+lingshu_tenant_auth→ auth + tenant
+lingshu_rbac       → core + http
+lingshu_data       → core
+lingshu_sql        → data
+lingshu_mysql      → sql
+lingshu_postgresql → sql
+lingshu_mongo      → data
+lingshu_cache      → core
+lingshu_redis      → core + cache
+lingshu_i18n       → core
+lingshu_openapi    → core + http
+lingshu_observability → core + http
+lingshu_resilience → core
 ```
 
-只有薄总入口包使用 `lingshu`。
+禁止：
+
+```text
+core → http/server/record/extensions
+http → server/database/auth/tenant
+server → extensions/project
+record → server/database drivers
+extension A → extension B（除非 Manifest 显式声明）
+```
 
 ---
 
-## 4. Application Kernel
+## 5. 源码注释、Docstring 与可读性标准
 
-`lingshu_core` 负责：
+代码注释不是装饰，而是公共合同和维护工具。
 
-- Application Kernel；
-- 配置系统；
-- 生命周期状态机；
-- Extension Manifest；
-- Capability Registry；
-- Scope-aware Dependency Container；
-- ContextVar 管理；
-- Execution Context；
-- Deadline、Cancellation 和 Cleanup Stack；
-- Health Model；
-- Error 基础模型；
-- Logging Contract；
-- Task Registry。
+### 5.1 语言规范
 
-Core 禁止包含：
+- 源码标识符、公共 Docstring、异常消息键和代码注释统一使用英文；
+- 架构、开发流程和用户指南可以中文为主；
+- 不在同一源码注释中维护中英双份内容，避免长期漂移；
+- 对外文档可由公共 Docstring 生成并进行本地化。
 
-- HTTP Method、URL Router、Request、Response；
-- Sanic、ASGI、WSGI；
-- JWT、Tenant、RBAC；
-- 数据库、Redis、ORM；
-- WebSocket；
-- 项目业务字段和表结构。
+### 5.2 强制注释范围
 
-Kernel 状态机：
+以下内容必须有完整 Docstring 或设计注释：
 
-```text
-created → configured → registered → starting → ready
-→ draining → stopping → closed
-```
+1. 所有公共 Module、Class、Protocol、Enum、Function、Method；
+2. 所有 Extension Manifest 字段；
+3. 所有状态机及合法/非法状态转换；
+4. 所有并发、锁、队列、背压和任务所有权；
+5. 所有安全校验、脱敏和拒绝规则；
+6. 所有资源生命周期、回滚、关闭和幂等语义；
+7. 所有复杂算法、性能权衡和非显然实现；
+8. 所有公共错误码及客户端可见行为；
+9. 所有兼容层和版本判断；
+10. 所有临时 TODO、FIXME 和安全例外。
 
-启动失败必须保留原始异常，逆序回滚已启动资源，并汇总清理异常。
+### 5.3 公共 API Docstring 内容
 
-内置作用域：
+至少说明：
 
 ```text
-application
-worker
-request
-operation
-transient
+Purpose
+Parameters
+Returns
+Raises
+Lifecycle / Ownership
+Concurrency
+Cancellation
+Security
+Examples（适用时）
 ```
 
-长生命周期对象不得捕获短生命周期对象。
+### 5.4 注释质量要求
+
+注释必须解释：
+
+- 为什么这样设计；
+- 必须保持的 Invariant；
+- 不能采用直觉写法的原因；
+- 修改后可能破坏的安全、并发和生命周期合同。
+
+禁止：
+
+- 重复代码表面含义；
+- 失效注释；
+- 注释掉的大段旧代码；
+- 无 Issue 编号的 TODO；
+- 用注释掩盖复杂度而不拆分代码。
+
+TODO 格式：
+
+```text
+TODO(#123): reason, owner, removal condition
+```
+
+### 5.5 质量门
+
+- 公共 API Docstring 覆盖率 100%；
+- 公共函数类型标注覆盖率 100%；
+- Core/HTTP/Server/Record 使用严格静态类型检查；
+- CI 检查 Docstring、失效 TODO、复杂度和循环依赖；
+- 行为变更必须同步修改注释、文档和测试；
+- 生成文件必须带 `Generated file; do not edit` 标记和生成源。
 
 ---
 
-## 5. HTTP Runtime
+## 6. `lingshu-core` 目录结构
 
-`lingshu_http` 完全由 LingShu 实现，不依赖其他 Web Framework。
+```text
+packages/lingshu-core/
+├── pyproject.toml
+├── README.md
+├── src/lingshu_core/
+│   ├── __init__.py
+│   ├── application/
+│   │   ├── kernel.py              # ApplicationKernel
+│   │   ├── builder.py             # KernelBuilder
+│   │   ├── state.py               # KernelState
+│   │   └── identity.py            # app/instance identity
+│   ├── plan/
+│   │   ├── model.py               # immutable ApplicationPlan
+│   │   ├── compiler.py
+│   │   ├── validator.py
+│   │   ├── fingerprint.py
+│   │   ├── serializer.py
+│   │   └── loader.py
+│   ├── config/
+│   │   ├── field.py
+│   │   ├── schema.py
+│   │   ├── source.py
+│   │   ├── loader.py
+│   │   ├── snapshot.py
+│   │   ├── secret.py
+│   │   └── reload.py
+│   ├── context/
+│   │   ├── execution.py
+│   │   ├── cancellation.py
+│   │   ├── deadline.py
+│   │   ├── binding.py
+│   │   └── operation.py
+│   ├── lifecycle/
+│   │   ├── state_machine.py
+│   │   ├── coordinator.py
+│   │   ├── rollback.py
+│   │   ├── shutdown.py
+│   │   └── errors.py
+│   ├── extension/
+│   │   ├── manifest.py
+│   │   ├── registry.py
+│   │   ├── graph.py
+│   │   ├── installer.py
+│   │   └── contract.py
+│   ├── capability/
+│   │   ├── token.py
+│   │   ├── registry.py
+│   │   ├── provider.py
+│   │   ├── scope.py
+│   │   └── container.py
+│   ├── service/
+│   │   ├── protocol.py
+│   │   ├── permit.py
+│   │   ├── layer.py
+│   │   ├── stack.py
+│   │   └── capacity.py
+│   ├── supervision/
+│   │   ├── child.py
+│   │   ├── supervisor.py
+│   │   ├── strategy.py
+│   │   ├── restart.py
+│   │   └── tree.py
+│   ├── telemetry/
+│   │   ├── event.py
+│   │   ├── schema.py
+│   │   ├── bus.py
+│   │   └── subscriber.py
+│   ├── health/
+│   │   ├── status.py
+│   │   ├── check.py
+│   │   ├── registry.py
+│   │   └── aggregator.py
+│   ├── errors/
+│   │   ├── base.py
+│   │   ├── spec.py
+│   │   ├── registry.py
+│   │   └── redaction.py
+│   ├── tasks/
+│   │   ├── managed.py
+│   │   ├── registry.py
+│   │   └── result.py
+│   ├── checks/
+│   │   ├── model.py
+│   │   ├── registry.py
+│   │   ├── runner.py
+│   │   └── codes.py
+│   ├── logging/
+│   │   ├── context.py
+│   │   ├── adapter.py
+│   │   └── redaction.py
+│   ├── typing.py
+│   └── version.py
+└── tests/
+```
 
-### 5.1 核心对象
+Core 原则上只依赖 Python 标准库。引入第三方依赖必须另立 ADR。
+
+---
+
+## 7. `lingshu-http` 目录结构
+
+```text
+packages/lingshu-http/
+├── src/lingshu_http/
+│   ├── __init__.py
+│   ├── protocol/
+│   │   ├── method.py
+│   │   ├── version.py
+│   │   ├── status.py
+│   │   └── media_type.py
+│   ├── message/
+│   │   ├── headers.py
+│   │   ├── cookies.py
+│   │   ├── query.py
+│   │   ├── url.py
+│   │   └── body.py
+│   ├── request.py
+│   ├── response.py
+│   ├── streaming.py
+│   ├── routing/
+│   │   ├── route.py
+│   │   ├── tree.py
+│   │   ├── compiler.py
+│   │   ├── matcher.py
+│   │   ├── params.py
+│   │   └── reverse.py
+│   ├── middleware/
+│   │   ├── stage.py
+│   │   ├── definition.py
+│   │   ├── compiler.py
+│   │   └── pipeline.py
+│   ├── extractors/
+│   │   ├── base.py
+│   │   ├── compiler.py
+│   │   ├── path.py
+│   │   ├── query.py
+│   │   ├── header.py
+│   │   ├── cookie.py
+│   │   ├── body.py
+│   │   └── inject.py
+│   ├── schema/
+│   │   ├── contract.py
+│   │   ├── registry.py
+│   │   ├── validator.py
+│   │   ├── serializer.py
+│   │   └── errors.py
+│   ├── modules/
+│   │   ├── context.py
+│   │   ├── export.py
+│   │   └── compiler.py
+│   ├── runtime/
+│   │   ├── engine.py
+│   │   ├── dispatcher.py
+│   │   ├── commit.py
+│   │   ├── cleanup.py
+│   │   └── state.py
+│   ├── exceptions/
+│   │   ├── mapper.py
+│   │   └── response.py
+│   └── checks/
+└── tests/
+```
+
+HTTP Runtime 不认识 Socket、Worker、数据库驱动或具体 Auth 实现。
+
+---
+
+## 8. `lingshu-record` 目录结构
+
+每请求独立目录是强制能力，因此独立为默认安装包：
+
+```text
+packages/lingshu-record/
+├── src/lingshu_record/
+│   ├── __init__.py
+│   ├── contract.py                # RequestRecorder capability
+│   ├── policy.py                  # capture/redaction/retention policy
+│   ├── model.py                   # manifest/event/final record schemas
+│   ├── manager.py                 # request record lifecycle
+│   ├── writer/
+│   │   ├── queue.py
+│   │   ├── worker.py
+│   │   ├── batch.py
+│   │   └── flush.py
+│   ├── storage/
+│   │   ├── base.py
+│   │   ├── filesystem.py
+│   │   ├── atomic.py
+│   │   └── permissions.py
+│   ├── sinks/
+│   │   ├── telemetry.py
+│   │   ├── logs.py
+│   │   └── calls.py
+│   ├── recovery/
+│   │   ├── scanner.py
+│   │   └── finalize.py
+│   ├── retention/
+│   │   ├── cleanup.py
+│   │   └── capacity.py
+│   ├── inspector/
+│   │   ├── reader.py
+│   │   └── explain.py
+│   └── checks/
+└── tests/
+```
+
+`lingshu-record` 通过 Telemetry Event Bus 接收事件，Router、Database、Cache 等组件不得直接操作请求目录。
+
+---
+
+## 9. `lingshu-server` 目录结构
+
+```text
+packages/lingshu-server/
+├── src/lingshu_server/
+│   ├── __init__.py
+│   ├── manager/
+│   │   ├── process.py
+│   │   ├── worker_pool.py
+│   │   ├── signals.py
+│   │   └── state.py
+│   ├── worker/
+│   │   ├── runtime.py
+│   │   ├── bootstrap.py
+│   │   └── shutdown.py
+│   ├── listener/
+│   │   ├── tcp.py
+│   │   ├── tls.py
+│   │   └── socket_options.py
+│   ├── connection/
+│   │   ├── model.py
+│   │   ├── state.py
+│   │   ├── supervisor.py
+│   │   ├── limits.py
+│   │   └── timeout.py
+│   ├── http1/
+│   │   ├── parser.py
+│   │   ├── strict_parser.py
+│   │   ├── request_decoder.py
+│   │   ├── response_encoder.py
+│   │   ├── chunked.py
+│   │   └── keepalive.py
+│   ├── admission/
+│   │   ├── limiter.py
+│   │   ├── shedding.py
+│   │   └── permit.py
+│   ├── proxy/
+│   │   ├── trust.py
+│   │   └── headers.py
+│   ├── transport/
+│   │   ├── contract.py
+│   │   ├── inbound.py
+│   │   └── outbound.py
+│   ├── platform/
+│   │   ├── base.py
+│   │   ├── posix.py
+│   │   └── windows.py
+│   ├── compat/
+│   │   ├── python.py
+│   │   └── asyncio.py
+│   └── checks/
+└── tests/
+```
+
+第一阶段支持 HTTP/1.1。HTTP/2、HTTP/3 和 WebSocket 以后独立阶段实现。
+
+---
+
+## 10. CLI、总入口与扩展目录结构
+
+### 10.1 `lingshu-cli`
+
+```text
+lingshu_cli/
+├── main.py
+├── commands/
+│   ├── new.py
+│   ├── run.py
+│   ├── check.py
+│   ├── doctor.py
+│   ├── build_plan.py
+│   ├── inspect.py
+│   └── explain.py
+├── output/
+└── templates/
+```
+
+### 10.2 `lingshu-framework`
+
+`lingshu` 只提供稳定薄入口：
 
 ```python
-class Request:
-    id: str
-    method: str
-    target: str
-    path: str
-    query: QueryParams
-    headers: Headers
-    cookies: Cookies
-    client: ClientInfo
-    server: ServerInfo
-    body: BodyStream
-    state: RequestState
-    execution: ExecutionContext
-
-class Response:
-    status: int
-    headers: Headers
-    body: bytes | AsyncIterator[bytes]
+from lingshu import LingShu, Request, Response, current_request, abort
 ```
 
-### 5.2 Router
+不得重新实现 Core/HTTP/Server 逻辑。
 
-必须支持：
+### 10.3 官方扩展
 
-- 静态和参数路由；
-- 类型转换；
-- Method 和 Host 匹配；
-- Route Name 和反向 URL；
-- Route Metadata；
-- 启动时冲突检查；
-- 编译后的确定性路由树；
-- 禁止最后注册者静默覆盖。
-
-### 5.3 Middleware Pipeline
-
-显式阶段：
+统一结构：
 
 ```text
-connection
-request_start
-before_routing
-after_routing
-before_handler
-after_handler
-response_start
-response_body
-request_end
-exception
-cleanup
+src/lingshu_<name>/
+├── __init__.py
+├── extension.py
+├── manifest.py
+├── config.py
+├── capabilities.py
+├── errors.py
+├── language/
+├── checks/
+└── tests_support/
 ```
 
-中间件必须声明阶段、优先级、依赖、短路能力、Streaming 能力和异常行为。
+---
 
-### 5.4 Streaming
+## 11. Application Plan
 
-Request Body 与 Response Body 必须支持流式读写、背压、客户端断开、最大 Body 限制、临时文件和清理。
+启动或构建阶段执行：
+
+```text
+discover
+→ validate
+→ compile
+→ fingerprint
+→ freeze
+```
+
+Plan 包含：
+
+```text
+extension dependency DAG
+provider/scope graph
+route tree
+module context tree
+service/layer graph
+handler extraction plans
+input validators
+output serializers
+error/catalog registry
+configuration schema
+telemetry event registry
+health check registry
+runtime record policy
+security policy summary
+```
+
+硬性规则：
+
+- 同一输入得到同一 fingerprint；
+- Production 可使用 `lingshu build-plan`；
+- 启动时验证源码、配置、扩展、Python 和 Plan fingerprint；
+- fingerprint 不一致时拒绝旧 Plan；
+- 不使用 pickle；
+- 第一阶段 Plan 使用可读、可审计格式；
+- 不透明代码生成或原生加速必须另立 ADR。
 
 ---
 
-## 6. Native Server
-
-`lingshu_server` 是 LingShu 自己的网络运行层。
-
-第一阶段正式范围：
-
-- asyncio TCP；
-- HTTP/1.1；
-- Keep-Alive；
-- Content-Length；
-- Chunked Transfer；
-- Request/Response Streaming；
-- TLS 使用 Python `ssl` / OpenSSL；
-- 单进程和多 Worker；
-- Windows 与 Linux；
-- Graceful Shutdown；
-- 可信代理配置。
-
-Parser 采用双实现合同：
-
-1. `StrictPythonParser`：自主实现，作为规范、安全和测试基准；
-2. `AcceleratedParser`：后续可选高性能实现，必须通过同一协议测试。
-
-服务器必须默认拒绝：
-
-- 重复或冲突 Content-Length；
-- Content-Length 与 Transfer-Encoding 冲突；
-- 非法 Chunk；
-- CRLF 注入；
-- 请求走私；
-- 超大 Header、过多 Header、超长请求行；
-- Slowloris；
-- 无界 Body 和 Multipart；
-- 未受信代理头；
-- 路径编码歧义。
-
-遇到协议歧义必须拒绝，不能宽松猜测。
-
----
-
-## 7. Extension Protocol
-
-Manifest 示例：
+## 12. Service / Layer / Permit
 
 ```python
-ExtensionManifest(
-    name="lingshu.auth",
-    version="0.1.0",
-    requires_core=">=0.1,<1.0",
-    requires_http=">=0.1,<1.0",
-    requires_python=">=3.10,<3.15",
-    provides=("security.authentication",),
-    requires=(),
-    optional_requires=(),
-    conflicts=(),
-)
+class Service(Protocol[RequestT, ResponseT]):
+    async def acquire(self, context: ExecutionContext) -> ServicePermit:
+        ...
+
+class ServicePermit(Protocol[RequestT, ResponseT]):
+    async def call(self, request: RequestT) -> ResponseT:
+        ...
+
+class Layer(Protocol):
+    def wrap(self, inner: Service) -> Service:
+        ...
 ```
+
+先获得 Permit，再调用 Service，确保容量已经预留。
+
+统一承载：
+
+```text
+Handler
+Middleware
+Timeout
+Concurrency Limit
+Rate Limit
+Load Shedding
+Retry
+Circuit Breaker
+Outbound HTTP
+Message Producer
+Extension Capability
+Runtime Record Writer
+```
+
+具体重试、熔断和限流策略属于 `lingshu-resilience`，不进入 Core。
+
+---
+
+## 13. ModuleContext
+
+ModuleContext 形成父子树。子 Context 默认继承父 Context 的 Provider、Layer、Hook、Schema、配置视图和错误处理，但父级和兄弟级不能看到子级私有能力。
+
+能力只有显式 `export` 才可跨边界共享。
+
+示例：
+
+```text
+Root
+├── PublicContext  → /public
+├── AdminContext   → Auth + RBAC + /admin
+└── ApiV2Context   → V2 Schema + /v2
+```
+
+Context 泄漏、循环依赖、重复导出和非法覆盖必须在 Plan 编译阶段失败。
+
+---
+
+## 14. Typed Extractor 与 Schema
+
+目标 API：
+
+```python
+@app.get("/users/{user_id}")
+async def get_user(
+    user_id: Path[int],
+    page: Query[int] = 1,
+    principal: Principal = Inject(),
+) -> UserOutput:
+    ...
+```
+
+启动时编译 ExtractionPlan：
+
+```text
+path/query/header/cookie extraction
+→ type conversion
+→ structural validation
+→ capability injection
+→ body decode
+→ handler
+→ output serialization
+```
+
+规则：
+
+- Body 只能被一个消费型 Extractor 消耗；
+- Body Extractor 必须位于计划末端；
+- 基础 Schema 校验禁止访问数据库或外部服务；
+- 业务校验进入显式 Service；
+- Response Schema 是输出字段白名单；
+- Unknown Field 策略必须显式；
+- Schema Engine 不强制绑定 Pydantic。
+
+---
+
+## 15. Extension Protocol
 
 生命周期：
 
@@ -310,219 +762,267 @@ ExtensionManifest(
 configure → register → start → ready → drain → stop → close
 ```
 
-硬性规则：
+Manifest 至少声明：
 
-- 禁止 import-time 注册和建连；
-- 注册必须可撤销；
+```text
+name
+version
+requires_core
+requires_python
+requires_packages
+provides
+requires
+optional_requires
+conflicts
+config schema
+error/catalog resources
+telemetry events
+health checks
+```
+
+规则：
+
+- 禁止 import-time 副作用；
+- Register 必须可撤销；
 - Start 失败必须逆序回滚；
 - Close 必须幂等；
-- 后台任务必须进入 Task Registry；
+- 后台任务进入 Task Registry 和 Supervision Tree；
 - 多 App 完全隔离；
 - 扩展不得修改 Core 文件；
 - 扩展必须通过统一 Contract Test。
 
 ---
 
-## 8. 官方扩展边界
+## 16. Telemetry 与 Runtime Record
 
-### Auth
+### 16.1 统一事件总线
 
-包含 Principal、Authenticator、JWT Bearer、API Key、Session 和认证中间件。不包含用户表、注册登录业务、Tenant 和 RBAC。
+组件发出版本化事件：
 
-### Tenant
+```text
+name
+schema_version
+phase
+monotonic_ns
+system_time
+measurements
+safe_metadata
+request_id
+connection_id
+trace_id
+span_id
+operation_id
+```
 
-包含 TenantContext、Host/Header/Path Resolver 和 Tenant Middleware。不强制依赖 Auth。
+统一流向：
 
-需要从认证 Claims 解析 Tenant 时使用独立桥接扩展，禁止 Auth 与 Tenant 相互硬绑定。
+```text
+Component
+→ Telemetry Event Bus
+→ Request Record Sink
+→ Structured Log Sink
+→ Metrics Sink
+→ Trace Sink
+```
 
-### RBAC
+### 16.2 Request ID 创建时机
 
-包含 Permission、Policy、Gate 和 Authorization Middleware。不包含项目角色表和权限表。
+连接接入后先执行 Connection Admission 和请求行长度/超时校验。只要安全识别出一个 HTTP 请求行，就立即：
 
-### Data
+1. 生成内部 Request ID；
+2. 同步创建独立目录和 manifest；
+3. 再继续完整 Header 和 Body 解析。
 
-包含 Resource、Transaction、Repository 和 Driver Extension Contract。MySQL、PostgreSQL、MongoDB、Redis 为独立包。
+在尚未形成合法请求行前发生的恶意字节或连接错误记录到：
 
-### Cache
+```text
+runtime/connections/<date>/<connection_id>/
+```
 
-包含 Cache Protocol、Memory Cache、TTL、Key 规范和 Stampede Protection。Redis 实现独立。
+Keep-Alive 连接中的每个请求拥有不同 Request ID，但共享 Connection ID。
 
-### i18n
-
-包含 Locale Resolver、Catalog、Message Formatter 和资源注册。未安装时使用 ErrorSpec 默认消息。
-
----
-
-## 9. Request ID 与每请求独立 Runtime Record
-
-这是 LingShu 的框架级硬性能力。
-
-### 9.1 不变量
-
-每一个进入 HTTP Runtime 的请求，在完成最基础的报文安全校验后、进入路由和业务代码前，必须：
-
-1. 生成内部 `request_id`；
-2. 在 Runtime 中创建以该 `request_id` 命名的独立文件夹；
-3. 记录从接入、解析、路由、中间件、业务调用、数据库/缓存/外部调用、响应、异常到清理的完整框架可观测事实；
-4. 在正常、异常、超时、取消、客户端断开和崩溃恢复时留下明确终态。
-
-若目录无法创建，默认不得让请求继续进入业务处理。框架返回安全的 `503 Runtime Storage Unavailable`，应用 readiness 失败，并写入进程级应急日志。
-
-### 9.2 Request ID
-
-内部 Request ID：
-
-- 每次请求必有且不可变；
-- 安全随机 128 bit；
-- 不包含用户、IP、路径和时间戳明文；
-- 不采用客户端值；
-- 创建目录前检查碰撞；
-- 响应头始终返回 `X-Request-ID`。
-
-客户端传入的 `X-Request-ID` 只能作为经过严格校验的 `external_request_id`。
-
-### 9.3 目录结构
-
-默认：
+### 16.3 目录结构
 
 ```text
 runtime/
-└── requests/
-    └── 2026/
-        └── 06/
-            └── 28/
-                └── <request_id>/
-                    ├── manifest.json
-                    ├── request.json
-                    ├── events.jsonl
-                    ├── routing.json
-                    ├── middleware.jsonl
-                    ├── logs.jsonl
-                    ├── calls/
-                    │   ├── database.jsonl
-                    │   ├── cache.jsonl
-                    │   ├── external_http.jsonl
-                    │   ├── message.jsonl
-                    │   └── extension.jsonl
-                    ├── response.json
-                    ├── error.json
-                    ├── cleanup.json
-                    ├── final.json
-                    ├── payload/
-                    │   ├── request.meta.json
-                    │   ├── request.body
-                    │   ├── response.meta.json
-                    │   └── response.body
-                    └── attachments/
+├── connections/<date>/<connection_id>/
+├── requests/<date>/<request_id>/
+│   ├── manifest.json
+│   ├── request.json
+│   ├── events.jsonl
+│   ├── routing.json
+│   ├── middleware.jsonl
+│   ├── logs.jsonl
+│   ├── calls/
+│   │   ├── database.jsonl
+│   │   ├── cache.jsonl
+│   │   ├── external_http.jsonl
+│   │   ├── message.jsonl
+│   │   └── extension.jsonl
+│   ├── response.json
+│   ├── error.json
+│   ├── cleanup.json
+│   ├── final.json
+│   ├── payload/
+│   └── attachments/
+└── operations/<date>/<operation_id>/
 ```
 
-按日期分层是为了避免单目录包含海量子目录；最末级目录必须严格以内部 `request_id` 命名。
+### 16.4 强制语义
 
-目录路径只能由内部 Request ID 构造，禁止把客户端值、URL、用户名或任意输入拼接进路径。
+- 目录创建失败时不得进入业务处理；
+- 请求目录只能由内部 Request ID 构造；
+- manifest 和 accepted 事件必须在业务执行前持久化；
+- 运行中事件可通过有界 Writer Queue 批量写入；
+- 队列满时施加背压，不静默丢事件；
+- 正常结束必须写 `final.json`；
+- Response 已提交后写盘失败不能修改已发送响应，但必须使 Readiness 失败并写应急日志；
+- 启动时恢复没有 `final.json` 的目录为 `crashed` 或 `incomplete`；
+- Runtime 目录权限、配额、TTL、磁盘安全线和符号链接防御是强制要求；
+- 敏感 Header、Token、Cookie、密码和未脱敏 Body 默认禁止落盘。
 
-### 9.4 权威事件流
+---
 
-`events.jsonl` 是追加式权威时间线，每行一个 JSON 事件，包含：
+## 17. 底层运行结构
+
+### 17.1 进程结构
 
 ```text
-seq
-request_id
-event
-monotonic_ns
-elapsed_ms
-component
-status
-safe_data
+ProcessManager
+├── Config Snapshot
+├── Frozen ApplicationPlan
+├── Listener Ownership
+├── WorkerSupervisor
+├── Signal / Shutdown Coordinator
+└── Process Health Aggregator
+
+Worker Process × N
+├── one Event Loop
+├── WorkerKernel
+├── Worker Container Scope
+├── Supervision Tree
+├── Telemetry Bus
+├── Request Record Writer
+├── HTTP Runtime
+├── Listener / Connection Supervisor
+└── Extension Worker Resources
 ```
 
-标准事件至少包括：
+规则：
+
+- Worker 之间不共享可变业务状态；
+- ApplicationPlan 是不可变快照；
+- POSIX 可通过 fork 复用只读 Plan；Windows 使用 spawn 后重新加载 Plan；
+- Worker 连接池、Record Writer、Task Registry 和 Extension Resource 独立；
+- Manager 不参与请求业务逻辑；
+- 单 Worker 模式仍保持相同生命周期语义。
+
+### 17.2 启动流程
 
 ```text
-request.accepted
-record.directory_created
-request.headers_parsed
-request.body_started
-request.body.completed
-route.match_started
-route.matched
-middleware.<name>.started
-middleware.<name>.completed
-handler.started
-handler.completed
-response.started
-response.completed
-cleanup.started
-cleanup.completed
-request.closed
+CLI parse minimal args
+→ load config sources
+→ resolve enabled packages
+→ run static system checks
+→ compile ApplicationPlan
+→ validate + fingerprint + freeze
+→ verify runtime directory and permissions
+→ create ProcessManager
+→ bind listener(s)
+→ spawn worker(s)
+→ each worker builds WorkerKernel
+→ start Telemetry and Record Writer
+→ configure/register/start extensions
+→ start HTTP Runtime and Connection Supervisor
+→ run startup checks
+→ mark worker ready
+→ manager marks application ready
 ```
 
-异常事件包括协议拒绝、超时、取消、客户端断开、Handler 失败、Response 失败、Cleanup 失败和崩溃恢复。
+任何 required 组件失败都触发逆序回滚，禁止半启动继续接流量。
 
-序号在单请求内严格递增；耗时使用单调时钟；事件只追加，不修改历史。
-
-### 9.5 “所有内容”的安全定义
-
-所有内容指完整框架执行事实、阶段、调用摘要、时间线、错误和被策略允许的 Payload 快照。
-
-默认禁止无条件落盘：
+### 17.3 关闭流程
 
 ```text
-Authorization
-Proxy-Authorization
-Cookie
-Set-Cookie
-Password
-Secret
-Token
-API Key
-私钥
-数据库密码与完整连接串
-未脱敏请求体和响应体
-完整上传文件
-完整 Python 本地变量
+signal received
+→ manager readiness=false
+→ stop accepting new connections
+→ workers enter draining
+→ wait bounded in-flight requests
+→ cancel remaining requests
+→ flush Request Records
+→ stop supervised tasks
+→ close extensions in reverse order
+→ close listener and event loop resources
+→ write shutdown summary
+→ process exit
 ```
 
-否则 Request Record 会成为大规模凭证和隐私泄漏源，违反安全框架目标。
+---
 
-### 9.6 Payload 捕获
-
-每个请求必须记录 Body 元数据：Content-Type、大小、SHA-256、是否截断、是否脱敏和是否被策略禁止保存。
-
-默认模式：
+## 18. 单请求完整运行链
 
 ```text
-metadata_only
+1. TCP accept
+2. connection admission / limits
+3. assign connection_id
+4. strict request-line parse
+5. request-line security validation
+6. generate request_id
+7. create request directory + manifest
+8. create ExecutionContext / Request Scope / deadline
+9. parse and validate headers
+10. proxy trust and client identity resolution
+11. acquire global/worker admission permit
+12. route pre-match and ModuleContext selection
+13. acquire Service Permit
+14. stream body under limits
+15. run before-routing layers
+16. final route match
+17. compile-time ExtractionPlan execution
+18. input Schema validation
+19. capability injection
+20. handler/service execution
+21. response Schema serialization
+22. response commit
+23. stream response with backpressure
+24. run after-response hooks
+25. cleanup Request Scope and ContextVar bindings
+26. flush final Runtime Record
+27. release permits and resources
+28. keep-alive next request or close connection
 ```
 
-可选：
+### 18.1 Response 状态机
 
 ```text
-safe_fields
-bounded_raw
-disabled_for_route
+new
+→ headers_committed
+→ streaming
+→ completed
 ```
 
-必须有全局大小上限；Route 只能收紧，不能擅自放宽；JSON/Form 通过字段白名单和脱敏保存；二进制上传默认只保存元数据和摘要。
-
-### 9.7 文件语义
-
-- `manifest.json`：Schema、Request ID、App、Worker、进程、接收时间和初始状态；
-- `request.json`：Method、Path Template、安全 Headers、Query 摘要、Client 和 Body 元数据；
-- `routing.json`：Route、参数转换、匹配耗时和拒绝原因；
-- `middleware.jsonl`：中间件阶段、顺序、耗时、短路和异常；
-- `logs.jsonl`：本请求的结构化日志副本，自动注入 Request ID；
-- `calls/*.jsonl`：数据库、缓存、外部 HTTP、消息和扩展调用摘要；
-- `response.json`：状态码、Headers 摘要、Body 大小/摘要和写出结果；
-- `error.json`：异常类型、安全摘要、发生阶段；
-- `cleanup.json`：每个清理 Hook 和 ContextVar Reset 结果；
-- `final.json`：最终状态、总耗时、事件数量、完整性和关闭时间。
-
-数据库默认保存 SQL 指纹或模板，不保存未脱敏绑定参数。
-
-### 9.8 状态与原子写
+异常状态：
 
 ```text
-open → closing → closed
+aborted
+client_disconnected
+failed
+```
+
+Headers 一旦提交，状态码和普通 Header 不得修改。之后发生错误只能中止流或使用协议允许的 Trailer。
+
+### 18.2 Request 状态机
+
+```text
+identified
+→ recorded
+→ parsing
+→ routed
+→ executing
+→ responding
+→ cleaning
+→ closed
 ```
 
 异常终态：
@@ -537,144 +1037,256 @@ crashed
 incomplete
 ```
 
-JSON 快照先写临时文件再原子 rename；JSONL 只追加；重要里程碑刷新缓冲；`final.json` 最后写入；正常关闭后禁止继续写入目录。
+---
 
-### 9.9 写入架构和背压
+## 19. 并发、容量与背压
 
-```text
-Request Execution
-      ↓ structured events
-Per-worker Bounded Record Queue
-      ↓
-Runtime Record Writer
-      ↓
-Request Directory
-```
-
-队列必须有界，不允许无限内存增长或静默丢事件。队列接近上限时对请求施加背压；持续不可用时 readiness=false；请求正常结束前必须确认 Final Record 已提交。
-
-### 9.10 崩溃恢复
-
-启动时扫描没有 `final.json` 的旧目录，追加恢复事件，并生成状态为 `crashed` 或 `incomplete` 的 `final.json`。恢复过程不得自动重放业务请求。
-
-### 9.11 权限和路径安全
-
-默认目标：
+每个边界必须有容量合同：
 
 ```text
-POSIX directory 0700
-POSIX file      0600
-Windows         仅服务账户与明确管理员
+listener connections
+worker active requests
+per-route concurrency
+body bytes in-flight
+response bytes queued
+record writer queue
+extension tasks
+outbound calls
 ```
 
-必须防御符号链接替换、路径穿越、临时文件竞态、外部 Request ID 注入和任意文件读取。Runtime 目录绝不能被静态文件服务暴露。
+规则：
 
-### 9.12 保留和容量
-
-必须配置：
-
-```text
-retention_days
-max_total_bytes
-max_request_count
-min_free_disk_bytes
-cleanup_interval
-```
-
-永不清理 Open 目录；优先清理超过 TTL 的 Closed/Rejected 目录；达到磁盘安全线时 readiness=false；清理操作必须审计；`runtime/` 必须加入 `.gitignore`。
-
-### 9.13 调试查询
-
-```bash
-lingshu debug request <request_id>
-lingshu debug request <request_id> --timeline
-lingshu debug request <request_id> --calls
-lingshu debug request <request_id> --errors
-```
-
-开发环境可以提供受保护的 Inspector：
-
-```text
-GET /__lingshu/debug/requests/{request_id}
-```
-
-Inspector 只能按 Request ID 读取结构化记录，不接受任意文件路径。Production 默认关闭；启用必须认证、授权、来源限制和审计。
-
-### 9.14 后台任务
-
-后台任务生成新的 `operation_id` 和独立目录：
-
-```text
-runtime/operations/<date>/<operation_id>/
-```
-
-Operation Manifest 保存 `parent_request_id`。后台任务不得继续持有 Request 对象或 Request Scope Resource。
+- 无容量时拒绝、等待有界时间或 Load Shed；
+- 不允许无限排队；
+- Deadline 是整个调用链总预算；
+- 子调用不得重新获得完整超时；
+- 客户端断开触发请求取消；
+- `CancelledError` 必须传播；
+- 后台任务必须转换为独立 Operation Context；
+- HTTP/1.1 第一阶段不并行执行同一连接中的 Pipelined Request；按顺序处理并限制 Read-ahead Buffer；
+- Streaming 必须服从写缓冲高水位和低水位。
 
 ---
 
-## 10. 错误码与语言资源
+## 20. Supervision 与健康状态
+
+### 20.1 Supervision Tree
+
+后台组件通过 ChildSpec 声明：
+
+```text
+name
+factory
+dependencies
+scope
+restart_policy
+restart_strategy
+shutdown_timeout
+health_check
+significant
+```
+
+重启策略：
+
+```text
+never
+on_failure
+always
+```
+
+监督策略：
+
+```text
+one_for_one
+rest_for_one
+one_for_all
+```
+
+必须有 max_restarts、restart_window、backoff、jitter 和 escalation。
+
+HTTP Handler 失败只结束当前请求，绝不自动重放业务请求。
+
+### 20.2 健康状态
+
+```text
+startup
+liveness
+readiness
+degraded
+```
+
+- Liveness 不依赖数据库和外部 API，避免重启风暴；
+- Readiness 聚合 required 扩展、磁盘、Record Writer、连接池等；
+- Draining 时 Liveness 可正常，但 Readiness 必须失败；
+- 健康变化进入 Telemetry 和审计记录。
+
+---
+
+## 21. System Check 与可解释工具
+
+命令：
+
+```bash
+lingshu check
+lingshu check --tag security
+lingshu check --deploy
+lingshu doctor
+lingshu build-plan
+lingshu inspect routes
+lingshu inspect route <name>
+lingshu inspect extensions
+lingshu inspect providers
+lingshu inspect layers
+lingshu inspect config <key>
+lingshu inspect health
+lingshu explain request <request_id>
+```
+
+检查类别：
+
+```text
+architecture
+configuration
+extensions
+providers
+routes
+schemas
+security
+runtime
+storage
+server
+packaging
+deployment
+```
+
+ERROR/CRITICAL 默认阻止启动。Production 安全检查不得静默忽略。
+
+---
+
+## 22. 错误与语言资源
 
 归属：
 
 ```text
 Core      → Core 错误
-HTTP      → HTTP/Server 错误
+HTTP      → HTTP/Runtime 错误
+Server    → Transport/Protocol 错误
+Record    → Runtime Storage 错误
 Extension → 扩展错误
 Project   → 业务错误
 ```
 
-每个包携带自己的 Registry 和 Catalog。启动时检查 Namespace、号段、Code、Key 和覆盖冲突。扩展不得修改 Core Registry，项目不得修改安装包资源。
+每个包携带自己的 Error Registry 和 Catalog。启动时检查 Namespace、号段、Code、Key 和覆盖冲突。
+
+生产环境内部错误响应必须包含 Request ID，但不得包含完整堆栈和敏感详情。
 
 ---
 
-## 11. 安全体系
+## 23. 配置系统
+
+来源优先级：
+
+```text
+package defaults
+→ project config
+→ environment
+→ explicit runtime override
+```
+
+字段声明：
+
+```text
+build_time
+startup_fixed
+runtime_reloadable
+secret
+```
+
+热更新采用：
+
+```text
+validate → prepare → swap → rollback
+```
+
+未知配置默认报错。所有配置模型生成统一 JSON Schema，并进入 Application Plan fingerprint。
+
+---
+
+## 24. 官方扩展边界
+
+### Auth
+
+Principal、Authenticator、JWT Bearer、API Key、Session 和认证 Layer。不包含用户表、注册登录业务、Tenant 和 RBAC。
+
+### Tenant
+
+TenantContext、Host/Header/Path Resolver 和 Tenant Layer。不强制依赖 Auth。
+
+### Tenant-Auth Bridge
+
+从 Principal 或认证 Claims 解析 Tenant，避免 Auth 与 Tenant 相互硬绑定。
+
+### RBAC
+
+Permission、Policy、Gate 和 Authorization Layer。不包含项目角色表和权限表。
+
+### Data
+
+Resource、Transaction、Repository 和 Driver Contract。MySQL、PostgreSQL、Mongo、Redis 为独立包。
+
+### Cache
+
+Cache Protocol、Memory Cache、TTL、Key 规范和 Stampede Protection。
+
+### i18n
+
+Locale Resolver、Catalog、Message Formatter 和资源注册。
+
+### Resilience
+
+Timeout、Concurrency Limit、Queue Limit、Rate Limit、Load Shedding、Retry、Circuit Breaker、Bulkhead 和 Fallback。
+
+Retry 只允许用于幂等操作；已提交响应后禁止重试。
+
+---
+
+## 25. 安全体系
 
 默认：
 
 - Debug 关闭；
-- 错误脱敏；
-- Header、Body、连接和时间均有上限；
+- Header、Body、连接、时间和队列均有限额；
 - Proxy Header 默认不信任；
-- Server Banner 最小化；
 - CORS 默认关闭；
-- Host 校验可配置；
+- Server Banner 最小化；
 - Cookie 安全属性明确；
-- 日志和 Request Record 自动脱敏；
+- 日志与 Record 自动脱敏；
 - Runtime 目录不公开；
-- TLS 使用安全默认值。
+- TLS 使用安全默认值；
+- Parser 对歧义报文直接拒绝。
 
-安全测试必须覆盖 Fuzzing、Malformed HTTP、Request Smuggling、Slow Client、Disconnect、Header Injection、Path Traversal、Multipart Bomb、并发泄漏和取消泄漏。
+必须防御：
 
----
-
-## 12. 稳定性与性能
-
-### 稳定性
-
-- `asyncio.CancelledError` 必须传播；
-- 所有资源有 Owner、Scope、Close、Timeout、Health 和 Rollback；
-- 禁止裸 `asyncio.create_task`；
-- App 状态不共享；
-- Worker 资源独立；
-- Request Context 不泄漏；
-- Extension Registry 不使用进程级可变全局状态。
-
-### 性能
-
-- 流式读写和背压；
-- 减少复制，优先 bytes/memoryview；
-- 编译路由树和 Middleware Pipeline；
-- 启动时编译依赖图；
-- 运行时避免无界反射；
-- 可选高性能 Parser；
-- 可选 uvloop，但不成为必须依赖；
-- 任何优化必须通过基准、协议和安全测试。
-
-每请求目录会增加文件系统负担，因此必须用日期分层、有界写入队列、批量写、容量监控和背压保证可控，不允许为了性能静默丢失请求记录。
+```text
+Slowloris
+Request Smuggling
+重复 Content-Length
+Content-Length / Transfer-Encoding 冲突
+非法 Chunk
+CRLF Injection
+Host Header 异常
+路径穿越
+编码歧义
+Multipart Bomb
+无界上传
+客户端断开资源泄漏
+符号链接替换
+Runtime 文件任意读取
+```
 
 ---
 
-## 13. Python 支持
+## 26. Python 与平台支持
 
 正式支持：
 
@@ -686,11 +1298,13 @@ Python 3.13
 Python 3.14
 ```
 
-能力检测优先，版本判断集中在 Compat 层；不全局屏蔽弃用警告；新 Python 版本先进入预览 CI，通过后才扩大 `requires-python`。
+Linux 全矩阵，Windows 最低和最高版本重点测试。
+
+能力检测优先，版本判断集中在 Server/Extension Compat 层；不全局屏蔽弃用警告；新 Python 版本先进入预览 CI。
 
 ---
 
-## 14. 测试与发布门
+## 27. 测试与发布门
 
 测试层级：
 
@@ -707,139 +1321,81 @@ Packaging
 Multi-platform
 ```
 
-Request Record 必测：
+核心必测：
 
-1. 每个业务请求在路由前创建 Request ID 目录；
-2. 目录名只能来自内部 Request ID；
-3. 并发、多 App、多 Worker 不串目录；
-4. Router、Middleware、Handler、Response 和 Cleanup 时间线完整；
-5. DB/Cache/外部调用进入正确文件；
-6. 正常、异常、超时、取消、断开和崩溃终态正确；
-7. 目录创建失败时业务不执行；
-8. 队列满时背压而不是丢事件；
-9. Token、Cookie、密码等敏感数据不落盘；
-10. Payload 捕获遵守大小和 Route 策略；
-11. 权限、原子写和符号链接防御有效；
-12. TTL、容量和磁盘安全线有效；
-13. Inspector 不支持任意文件读取；
-14. 请求结束后 ContextVar、文件句柄和 Scope 无泄漏。
-
-发布必须验证 Wheel/Sdist、Clean Install、Metadata、`requires-python`、依赖范围、Import Smoke、Public API Snapshot、Changelog 和 Migration Guide。
+- ApplicationPlan 确定性；
+- Scope 捕获和依赖循环；
+- 生命周期回滚；
+- Cancellation 和 Deadline；
+- 多 App、多 Worker 隔离；
+- Router、Extractor、Schema 和 Response Commit；
+- HTTP/1.1 协议与恶意报文；
+- Record 目录、原子写、恢复、容量和脱敏；
+- Supervision 重启强度和停止；
+- 无 ContextVar、Task、Socket、文件句柄和临时文件泄漏；
+- Build Wheel/Sdist、Clean Install、Public API Snapshot。
 
 ---
 
-## 15. 当前仓库处理原则
-
-分为三类：
-
-1. 吸收思想：Context、生命周期、错误码、测试方法；
-2. 重写素材：Router、Middleware、Auth、Tenant、Database、CLI；
-3. 淘汰：Sanic 绑定实现、Legacy Facade、永久 Compat、Auth 双轨、Tenant/Auth 耦合、Core 内 Model/BusinessModel。
-
-不以旧项目兼容为前提。
-
----
-
-## 16. 实施路线
-
-### P0 总纲冻结
-
-完成本 Blueprint、对应 ADR 和多多确认，不修改生产代码。
-
-### P1 单仓多包骨架
-
-建立 Packages、独立 Pyproject、CI、Build 和 Install 测试。
-
-### P2 Application Kernel
-
-实现 Config、Context、Lifecycle、Extension、Capability、Scope、Error 和 Task Registry。
-
-### P3 HTTP Runtime
-
-实现 Request、Response、Headers、BodyStream、Router、Middleware、Exception Pipeline 和 Streaming。
-
-### P4 Runtime Request Record
-
-先实现 Request ID、每请求目录、事件流、脱敏、原子写、Writer Queue、容量、恢复和 Inspector，再进入正式 Server 业务处理。
-
-### P5 Native Server MVP
-
-实现 asyncio TCP、Strict HTTP/1.1 Parser、连接状态机、Keep-Alive、Chunked、Timeout、Limits 和 Graceful Shutdown。
-
-### P6 Security Hardening
-
-完成 Fuzz、Smuggling、Slowloris、Header Validation、Proxy Trust 和 TLS Defaults。
-
-### P7 Extension Runtime
-
-实现 Manifest、DAG、Lifecycle、Rollback 和 Contract Test Kit。
-
-### P8 基础扩展
-
-Auth、Tenant、RBAC、i18n 和 Cache。
-
-### P9 Data Extensions
-
-Data Protocol、MySQL、PostgreSQL、Mongo 和 Redis。
-
-### P10 CLI 与 Scaffold
-
-新项目、扩展、Controller/Service/Repository 模板。
-
-### P11 性能、多 Worker、WebSocket、OpenAPI、Observability
-
-按独立阶段实施并测试。
-
-### P12 1.0 冻结
-
-冻结 Stable API、安全文档、扩展指南、发布流程和长期支持策略。
-
----
-
-## 17. 后续治理
-
-每个实现 Issue 必须引用：
-
-1. Blueprint 章节；
-2. 对应 ADR；
-3. 当前实施阶段；
-4. 前置条件；
-5. 允许和禁止范围；
-6. 不变量；
-7. 测试合同；
-8. 回滚点；
-9. 退出条件。
-
-发现 Blueprint 有问题时：
+## 28. 完整实施路线
 
 ```text
-停止实现
-→ 新建架构修订 Issue
-→ 修改 Blueprint/ADR
-→ 多多确认
-→ 恢复实施
+P0  总纲确认与冻结
+P1  单仓多包骨架、质量工具、注释与类型合同
+P2  Core Kernel：Config/Context/Lifecycle/Error/Task
+P3  Capability/Scope/Service/Layer/Supervision/Health/Check
+P4  Application Plan Compiler
+P5  HTTP 基础对象、Router、Middleware、ModuleContext
+P6  Extractor、Schema、Response Commit、Error Pipeline
+P7  Telemetry Event Bus 与 lingshu-record
+P8  Native Server：Manager/Worker/Connection/HTTP1
+P9  Admission、Backpressure、Graceful Shutdown、多 Worker
+P10 Security Hardening、Fuzz、Request Smuggling
+P11 Extension Runtime 与 Contract Test Kit
+P12 Auth/Tenant/Tenant-Auth/RBAC/i18n/Cache/Resilience
+P13 Data/SQL/MySQL/PostgreSQL/Mongo/Redis
+P14 CLI、Scaffold、Inspect、Doctor、Explain
+P15 性能优化、Accelerated Parser、长期压测
+P16 WebSocket/OpenAPI/Observability
+P17 1.0 API 冻结与发布
 ```
-
-禁止在局部实现 PR 中悄悄改变总体设计。
 
 ---
 
-## 18. 当前冻结候选决策
+## 29. 开始实施前的退出条件
+
+P0 只有满足以下条件才可结束：
+
+1. 本 Blueprint 由多多确认；
+2. v0.5 增补内容已经并入本文件；
+3. 不再存在第二份具有更高优先级的总体设计文件；
+4. 包结构、Core 目录、HTTP 目录、Record 目录、Server 目录已经固定；
+5. 启动、请求、关闭和崩溃恢复流程已经固定；
+6. 源码注释和 Docstring 标准已经固定；
+7. P1 范围和验收标准能够直接编写 Issue；
+8. Qwen、Gemini、GLM 等开发者只执行冻结设计，不再自行设计总体架构。
+
+---
+
+## 30. 当前冻结候选决策
 
 1. LingShu 是完全独立的 Python Framework；
 2. 不依赖 Sanic 或其他上层 Web Framework；
 3. 不承担旧项目兼容义务；
-4. Core、HTTP Runtime 和 Native Server 均由 LingShu 定义；
-5. TLS 使用 Python/OpenSSL，不自造密码学；
-6. 第一阶段正式支持 HTTP/1.1；
-7. Auth、Tenant、RBAC、Data、Cache、i18n 为独立扩展；
-8. Model/BusinessModel 不进入 Core；
-9. 不建立永久 Compat 层；
-10. 采用单仓多包；
-11. Python 3.10～3.14；
-12. 安全、稳定和可测试优先于极限性能；
-13. 每一个业务请求都必须拥有内部 Request ID；
-14. 每一个请求必须在 `runtime/requests/<date>/<request_id>/` 创建独立 Request Record；
-15. Request Record 无法创建时，默认不得进入业务处理；
-16. 所有框架可观测事实必须记录，原始敏感数据必须按安全策略捕获；
-17. 本 Blueprint 在多多确认并合并前不启动生产实现。
+4. 采用单仓多独立 distribution；
+5. Core、HTTP、Record、Server 分包；
+6. 每个请求必须有内部 Request ID 和独立 Runtime Record；
+7. 目录创建失败时请求不得进入业务；
+8. 所有观测通过统一 Telemetry Event Bus；
+9. 路由、依赖、Layer、Extractor、Schema 和配置编译为 Application Plan；
+10. 使用 Service/Layer/Permit 统一容量和背压；
+11. ModuleContext 默认隔离；
+12. Response Schema 是输出字段白名单；
+13. 后台组件受 Supervision Tree 管理；
+14. Startup、Liveness、Readiness、Degraded 分离；
+15. Core 不包含 Auth、Tenant、RBAC、Data、Cache、i18n；
+16. Model/BusinessModel 不进入 Core；
+17. Python 3.10～3.14；
+18. 公共 API Docstring、类型标注和关键设计注释是强制质量门；
+19. 安全、稳定、可解释和可测试优先于极限性能；
+20. 本 Blueprint 确认前不得启动生产实现。
