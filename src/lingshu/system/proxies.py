@@ -101,6 +101,12 @@ class RequestProxy:
             return getattr(ctx, "g")
         return current_user.get()
 
+    @property
+    def principal(self):
+        from lingshu.system.auth.context import current_principal
+
+        return current_principal.get()
+
 
 class DatabaseProxy:
     @property
