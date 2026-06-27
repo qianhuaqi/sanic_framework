@@ -11,6 +11,7 @@ from lingshu import abort, app, config, db, language, logger, request
 from lingshu.exception import APIException
 from lingshu.middleware_registry import register_middleware
 from lingshu.response import json_response
+from lingshu.router import compile_route_policies
 from lingshu.system import sanic_adapter
 from lingshu.system.context import app_context, request_context
 from lingshu.system.errors import NoAppContextError, NoRequestContextError, ResourceNotConfiguredError
@@ -231,6 +232,8 @@ def test_request_context_clears_after_real_sanic_request(tmp_path):
         sanic_adapter.reset_request_context(request_)
         return json_response(code=990000, msg=str(exception), status=500)
 
+    compile_route_policies(raw_app)
+
     async def scenario():
         _, response = await raw_app.asgi_client.get("/probe")
         assert response.status == 200
@@ -280,6 +283,8 @@ def test_request_context_clears_when_response_middleware_fails(tmp_path):
     async def handle_exception(request_, exception):
         return json_response(code=990000, msg=str(exception), status=500)
 
+    compile_route_policies(raw_app)
+
     async def scenario():
         _, response_ = await raw_app.asgi_client.get("/probe")
         assert response_.status == 200
@@ -318,6 +323,8 @@ def test_request_context_clears_when_handler_task_is_cancelled(tmp_path):
         captured["request"] = request_
         captured["context"] = request_.ctx.lingshu_context
         raise asyncio.CancelledError()
+
+    compile_route_policies(raw_app)
 
     async def scenario():
         task = asyncio.create_task(raw_app.asgi_client.get("/cancel"))
@@ -372,6 +379,8 @@ def test_request_context_done_callback_is_noop_after_normal_reset(tmp_path):
         captured["context"] = request_.ctx.lingshu_context
         assert app.raw is raw_app
         return json_response({"ok": True})
+
+    compile_route_policies(raw_app)
 
     async def scenario():
         with app_context(outer_app):

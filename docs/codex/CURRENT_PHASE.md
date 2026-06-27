@@ -1,69 +1,24 @@
 # Current Phase
 
 Project: LingShu Framework
-Current phase: C0 - global framework research convergence
-Current branch: research/phase-c0-global-frameworks
-Current PR: #11
-Status: research convergence under independent review
-Next runtime phase allowed: no
+Current phase: C1 - request execution foundation and lifecycle
+Current branch: codex/phase-c1-request-runtime
+Current issue: #12
+Current PR: #13
+Status: implementation allowed within C1 scope
+Next phase allowed: no
 
 ## Accepted Baseline
 
 - Phase A accepted and merged.
 - Phase B accepted and merged through PR #8.
-- Current main baseline before this research branch: commit `76852c7`.
+- Phase C0 research convergence accepted and merged through PR #11.
+- C0 merge commit: `d571602cb0e83b7abe49a3f1b53e43dbeb2d2aa8`.
 - Phase B tests previously recorded: 125 passed, 0 failed, 1 skipped.
 
-## Current Phase Goal
+## Phase Goal
 
-Complete the documentation-only Phase C0 convergence before runtime implementation:
-
-- consolidate global framework research;
-- freeze adopt/adapt/extension/reject/later decisions;
-- define core versus extension boundaries;
-- map findings into small Phase C-F implementation PRs;
-- correct stale governance state;
-- keep runtime code unchanged.
-
-## Current Deliverables
-
-```text
-docs/research/framework-capability-matrix.md
-docs/research/lingshu-adoption-matrix.md
-docs/architecture/phase-cf-implementation-map.md
-docs/adr/ADR-core-vs-extension-boundary.md
-```
-
-Supporting research and ADRs cover:
-
-```text
-data/ORM/ODM/Redis
-security/auth/signing/idempotency
-concurrency/cancellation/resilience/shutdown
-schema/validation/OpenAPI/codegen
-extensions/DI/events/audit/observability/testing
-```
-
-## Current Prohibitions
-
-- Do not modify LingShu runtime code in the C0 research branch.
-- Do not start Phase C1 before PR #11 is independently reviewed, accepted, and merged.
-- Do not combine C1 security/lifecycle implementation with database, Redis, MongoDB, OpenAPI, or extension runtime work.
-- Do not create one giant Phase C-F implementation PR.
-- Do not silently move extension/later capabilities into the core.
-- Do not merge PR #11 without independent validation.
-- Do not commit secrets, local personal paths, network addresses, or private credentials.
-- Do not add business-code imports from `lingshu.system`.
-
-## Next Runtime Phase
-
-After C0 is accepted and merged, begin:
-
-```text
-C1 - Request execution foundation and lifecycle
-```
-
-C1 is limited to:
+Build the request execution foundation required by later security, database, Schema, idempotency and extension work:
 
 ```text
 RequestExecutionContext
@@ -74,15 +29,136 @@ health/live/ready/drain
 ShutdownCoordinator
 ```
 
-C1 must not implement JWT, HMAC signing, Redis, ORM, MongoDB, OpenAPI generation, or the full extension runtime.
+The full specification and acceptance contract are in Issue #12.
+
+## Required Work
+
+### Request execution context
+
+- request_id;
+- trace_id field/propagation hook only;
+- optional operation_id;
+- compiled route policy;
+- absolute monotonic deadline;
+- cancellation reason;
+- lifecycle state;
+- ContextVar isolation and guaranteed reset.
+
+### RoutePolicy compiler skeleton
+
+- explicit global -> blueprint/controller -> route precedence;
+- immutable compiled policy;
+- startup validation;
+- current fields limited to public/auth_required compatibility, maintenance_check, timeout, body_limit metadata and audit_level metadata;
+- every route receives a compiled policy.
+
+### Deadline and cancellation
+
+- absolute deadline;
+- remaining budget;
+- stable cancellation reasons;
+- cleanup in finally;
+- do not swallow cancellation.
+
+### TaskRegistry
+
+- strong task references;
+- spawn/list/cancel/cancel_all/shutdown_and_wait;
+- consume task exceptions;
+- remove completed tasks;
+- cancellation must be awaited;
+- no default detach.
+
+### Lifecycle
+
+```text
+starting -> ready -> draining -> stopping -> stopped
+```
+
+- `/live`;
+- `/ready`;
+- basic `/health`;
+- drain rejects new business work;
+- cleanup callbacks run in reverse order;
+- shutdown budgets and idempotent repeated shutdown.
+
+## Mandatory Tests
+
+- 100 and 1000 concurrent request contexts do not cross-contaminate;
+- multi-app isolation;
+- reset after normal return, exception, cancellation and timeout;
+- deadline remaining budget decreases correctly;
+- parent deadline constrains child operations;
+- route policy precedence, immutability and invalid-combination failures;
+- every route has a compiled policy;
+- TaskRegistry holds strong references, consumes errors and awaits cancellation;
+- lifecycle state transition matrix;
+- drain/readiness behavior;
+- reverse cleanup order and partial cleanup failure;
+- shutdown idempotency and total budget;
+- existing full tests, wheel/sdist and generated-project smoke remain passing.
+
+Concurrency tests must use deterministic Event/Barrier/Fake Clock techniques rather than random sleep.
+
+## Current Prohibitions
+
+Do not implement or refactor the following in C1:
+
+```text
+JWT/API Key/Session authentication
+resource authorization and real TenantContext resolution
+HMAC signing, nonce and replay protection
+rate limiting, concurrency store or idempotency store
+MySQL/SQLite/MongoDB/Redis backend redesign
+Pydantic Schema facade
+OpenAPI 3.1 compiler or TypeScript SDK
+full DI container or Extension Manifest runtime
+Outbox, Audit implementation or OTel exporter
+lingshu-ms, Go runtime, Vue runtime or device gateway
+```
+
+Also prohibited:
+
+- no giant runtime.py;
+- no business imports from `lingshu.system`;
+- no unowned `asyncio.create_task()`;
+- no swallowing `CancelledError`;
+- no unbounded queues;
+- no secrets, private paths, credentials or network addresses;
+- no starting C2 before independent C1 acceptance.
+
+If a later-phase need is discovered, document it in the relevant issue; do not implement it in this branch.
+
+## PR Requirements
+
+PR title:
+
+```text
+feat: add request execution context and lifecycle foundation
+```
+
+PR body must include:
+
+```text
+Refs #12
+implementation summary
+public and internal API list
+lifecycle/state-machine explanation
+test results and new test list
+explicit non-goals
+risks and later extension points
+```
+
+Codex must not merge the PR.
 
 ## Acceptance Owner
 
-- Xiao Gu performs independent review and records the acceptance result.
-- Codex may implement later phases only after the accepted status is recorded in GitHub.
-- GitHub branch, PR, commits, tests, ADRs, and this file are the source of truth; local chat state is not.
+- Xiao Gu performs independent review and records the result in GitHub.
+- GitHub branch, Issue #12, PR, commits, tests, ADRs and this file are the source of truth.
+- Local chat state is not evidence of completion.
 
-## Branch And PR
+## Branch And Tracking
 
-- Branch: `research/phase-c0-global-frameworks`
-- Pull request: `#11`
+- Branch: `codex/phase-c1-request-runtime`
+- Issue: `#12`
+- Pull request: `#13`

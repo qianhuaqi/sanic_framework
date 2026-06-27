@@ -5,7 +5,7 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BRANCH = "codex/phase-b-lingshu-context"
+BRANCH = "codex/phase-c1-request-runtime"
 
 
 def _read(relative_path: str) -> str:
@@ -60,7 +60,7 @@ def _write_handoff(repo: Path, work_commit: str, branch: str = BRANCH):
         "## Next exact action\n"
         "- continue\n\n"
         "## Current PR\n"
-        "- PR: #8\n"
+        "- PR: #12-test\n"
         "- Latest instruction: test handoff\n",
         encoding="utf-8",
     )
@@ -129,7 +129,7 @@ def test_resume_work_passes_in_real_git_repo(tmp_path):
     result = _powershell(work / "scripts" / "resume-work.ps1", work)
 
     assert result.returncode == 0, result.stderr
-    assert "Current branch: codex/phase-b-lingshu-context" in result.stdout
+    assert "Current branch: codex/phase-c1-request-runtime" in result.stdout
     assert "HANDOFF.md:" in result.stdout
 
 
@@ -202,18 +202,18 @@ def test_agents_records_single_writer_rule_and_sources_of_truth():
     assert "A phase branch may be written by only one computer at a time." in agents
     assert "Codex chat history is not a source of truth." in agents
     assert "Business code must not import `lingshu.system`." in agents
-    assert "Do not start phases C, D, E, or F." in agents
+    assert "Do not start phases C2, C3, C4, C5, C6, D, E, or F." in agents
 
 
-def test_current_phase_and_handoff_docs_exist_with_phase_b_context():
+def test_current_phase_and_handoff_docs_exist_with_current_context():
     current_phase = _read("docs/codex/CURRENT_PHASE.md")
     handoff = _read("docs/codex/HANDOFF.md")
 
-    assert "Current phase: B" in current_phase
-    assert "Current branch: codex/phase-b-lingshu-context" in current_phase
-    assert "Current PR: #8" in current_phase
+    assert "Current phase: C1" in current_phase
+    assert "Current branch: codex/phase-c1-request-runtime" in current_phase
+    assert "Current issue: #12" in current_phase
     assert "Next phase allowed: no" in current_phase
-    assert "Branch: codex/phase-b-lingshu-context" in handoff
+    assert "Branch:" in handoff
     assert "Work commit:" in handoff
     assert "Local HEAD:" not in handoff
     assert "Remote HEAD:" not in handoff

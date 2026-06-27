@@ -37,8 +37,11 @@ This repository uses a strict GitHub-first workflow for LingShu Framework develo
 - Do not force push.
 - Do not automatically save local changes outside an explicit commit.
 
-## Phase B Boundaries
+## Phase C1 Boundaries
 
 - Business code must not import `lingshu.system`.
-- The current work is phase B only.
-- Do not start phases C, D, E, or F.
+- The current work is phase C1 only.
+- Do not start phases C2, C3, C4, C5, C6, D, E, or F.
+- Do not implement JWT, API Key, Session authentication, authorization, tenant resolution, HMAC, nonce, replay protection, rate limiting, idempotency stores, database backend redesign, Pydantic Schema facade, OpenAPI, TypeScript SDK, full DI, extension manifest runtime, Outbox, Audit, OTel exporters, lingshu-ms, Go runtime, Vue runtime, or device gateway in C1.
+- Do not use unowned `asyncio.create_task()`.
+- Do not swallow `CancelledError`.

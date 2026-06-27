@@ -7,6 +7,7 @@ from sanic import Blueprint
 
 from lingshu.app import create_app
 from lingshu.exception import APIException
+from lingshu.router import compile_route_policies
 from lingshu.response import json_response
 
 
@@ -75,6 +76,7 @@ def test_api_exception_response_uses_code_msg_data_shape():
         raise APIException(code=991111, msg="payload required", status_code=400, data=False)
 
     app.blueprint(bp)
+    compile_route_policies(app)
 
     async def scenario():
         return await app.asgi_client.get("/contract/api-error")
@@ -108,6 +110,7 @@ def test_unknown_exception_returns_safe_500_response():
         raise RuntimeError("secret boom text")
 
     app.blueprint(bp)
+    compile_route_policies(app)
 
     async def scenario():
         return await app.asgi_client.get("/contract/boom")

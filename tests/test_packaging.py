@@ -63,4 +63,5 @@ def test_built_wheel_contains_lingshu_package_data_and_no_legacy_framework(tmp_p
     assert "lingshu/language/zh-CN/ERROR/system.ini" in names
     assert "lingshu/language/en-US/ERROR/system.ini" in names
     assert "lingshu/modules.ini" not in names
+    assert "lingshu/system/error_codes/internal_manifest.json" not in names
     assert not any(name.startswith("framework/") for name in names)

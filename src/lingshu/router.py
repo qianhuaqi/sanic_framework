@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from lingshu.system.policy import RoutePolicyCompiler, RoutePolicyDefinition, RoutePolicyRegistry
+
 
 @dataclass(frozen=True)
 class RoutePolicy:
@@ -20,3 +22,9 @@ def get_blueprint_policy(blueprint) -> RoutePolicy:
 def register_blueprints(app, blueprints):
     for blueprint in blueprints:
         app.blueprint(blueprint)
+
+
+def compile_route_policies(app, defaults: RoutePolicyDefinition | None = None):
+    compiled = RoutePolicyCompiler(RoutePolicyRegistry(defaults=defaults)).compile_app(app)
+    app.ctx.route_policies = compiled
+    return compiled

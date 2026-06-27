@@ -12,7 +12,7 @@ from lingshu.lifecycle import register_lifecycle
 from lingshu.logging import setup_logging
 from lingshu.middleware_registry import register_middleware
 from lingshu.response import json_response
-from lingshu.router import register_blueprints
+from lingshu.router import compile_route_policies, register_blueprints
 from lingshu.system import sanic_adapter
 from lingshu.runtime import run_app
 
@@ -55,14 +55,15 @@ def create_app():
     setup_logging(app)
     register_middleware(app)
     sanic_adapter.install_context_middleware(app)
-    register_lifecycle(app, _get_project_extension_modules())
 
     register_blueprints(app, _get_project_blueprints(config))
+    register_lifecycle(app, _get_project_extension_modules())
     _register_public_static(app)
+    compile_route_policies(app)
 
     @app.exception(APIException)
     async def handle_api_exception(request, exception):
-        sanic_adapter.reset_request_context(request)
+        await sanic_adapter.finish_request_context(request)
         return json_response(
             data=exception.data,
             code=exception.code,
@@ -72,7 +73,7 @@ def create_app():
 
     @app.exception(Exception)
     async def handle_unknown_exception(request, exception):
-        sanic_adapter.reset_request_context(request)
+        await sanic_adapter.finish_request_context(request)
         if isinstance(exception, SanicException):
             status_code = getattr(exception, "status_code", 500)
             if status_code < 500:
