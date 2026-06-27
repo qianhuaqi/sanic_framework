@@ -299,7 +299,7 @@ Computed by AST scanning all `.py` files at commit `2fc6e6b`. Only
 | `versioning` | (none) |
 | `view` | (none) |
 
-### 4.2 Function-level lazy edges (29 deferred imports)
+### 4.2 Function-level lazy edges (30 deferred imports)
 
 These are `from lingshu.*` or `import lingshu.*` statements appearing inside
 function/method bodies (not at module top level). They break potential import

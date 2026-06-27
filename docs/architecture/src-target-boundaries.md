@@ -100,30 +100,55 @@ class AppCleanupRegistry:
     """Per-app registry for request cleanup hooks."""
 
     def __init__(self):
-        self._hooks: dict[str, CleanupHook] = {}  # keyed by unique ID
+        # hook_id → CleanupHook(fn, order)
+        self._hooks: dict[str, CleanupHook] = {}
 
     def register(self, hook_id: str, hook: Callable, *, order: int = 0) -> None:
-        if hook_id in self._hooks:
-            return  # idempotent — duplicate registration is a no-op
+        existing = self._hooks.get(hook_id)
+        if existing is not None:
+            # Same hook_id + same callable → idempotent no-op
+            if existing.fn is hook:
+                return
+            # Same hook_id + DIFFERENT callable → configuration error
+            # raised at install time, not at request time
+            raise CleanupConfigError(
+                hook_id=hook_id,
+                existing_fn=existing.fn,
+                new_fn=hook,
+            )
         self._hooks[hook_id] = CleanupHook(id=hook_id, fn=hook, order=order)
 
     def unregister(self, hook_id: str) -> None:
         self._hooks.pop(hook_id, None)
 
     async def run_all(self, raw_request, *, reason: str | None = None) -> None:
-        """Run all registered hooks in order. Idempotent per request."""
-        if getattr(raw_request.ctx, "_lingshu_cleanup_done", False):
-            return
-        raw_request.ctx._lingshu_cleanup_done = True
+        """Run all registered hooks in order.
+
+        Each hook is individually marked as completed. A hook that has
+        already run for this request is NOT re-run.
+        """
+        completed = getattr(raw_request.ctx, "_lingshu_completed_hooks", None)
+        if completed is None:
+            completed = set()
+            raw_request.ctx._lingshu_completed_hooks = completed
 
         errors: list[CleanupError] = []
         for hook in sorted(self._hooks.values(), key=lambda h: h.order):
+            if hook.id in completed:
+                continue  # per-hook idempotency — skip already-completed hooks
+
             try:
                 result = hook.fn(raw_request)
                 if inspect.isawaitable(result):
                     await result
+                completed.add(hook.id)  # mark AFTER successful completion
             except asyncio.CancelledError:
-                raise  # MUST propagate — never swallow cancellation
+                # Necessary ContextVar/binding resets for previously-completed
+                # hooks are already done. Re-raise CancelledError after this
+                # hook's necessary cleanup — the outer caller re-propagates.
+                # This hook is NOT marked complete; it will be retried if
+                # run_all is called again (e.g. by a final cleanup pass).
+                raise
             except Exception as exc:
                 errors.append(CleanupError(hook_id=hook.id, error=exc))
                 logger.warning(
@@ -131,9 +156,11 @@ class AppCleanupRegistry:
                     hook.id,
                     _summarize_exception(exc),
                 )
+                # Even on error, mark as completed so we don't retry a
+                # failing hook in a subsequent cleanup pass.
+                completed.add(hook.id)
+
         if errors:
-            # Aggregate but do not raise — cleanup failures are logged,
-            # not propagated to the client response.
             raw_request.ctx._lingshu_cleanup_errors = errors
 ```
 
@@ -142,14 +169,19 @@ class AppCleanupRegistry:
 | Property | Specification |
 |---|---|
 | **Scope** | One registry per Sanic app instance (`app.ctx.cleanup_registry`) |
-| **Hook ID** | String, unique within the registry. Duplicate `register()` is a no-op. |
+| **Hook ID** | String, unique within the registry. |
+| **Duplicate registration (same callable)** | `register()` with same `hook_id` AND same `fn` object → idempotent no-op. |
+| **Conflicting registration (different callable)** | `register()` with same `hook_id` but different `fn` → raises `CleanupConfigError` at install time. This is a configuration error, not a runtime error. |
 | **Order** | Integer, ascending. Default 0. Hooks with same order run in registration order. |
-| **Idempotency** | `run_all()` sets `_lingshu_cleanup_done` flag on `request.ctx`. Second call returns immediately. |
-| **CancelledError** | Always propagated. Never caught, never logged as error. |
-| **Other exceptions** | Caught, logged at WARNING level with sanitized summary. Does NOT stop subsequent hooks. Errors are aggregated in `request.ctx._lingshu_cleanup_errors`. |
+| **Per-hook completion tracking** | Each request records `_lingshu_completed_hooks: set[str]` on `request.ctx`. A hook's ID is added to this set **only after it completes** (success or exception). A hook that has already completed is skipped on subsequent `run_all()` calls. |
+| **No pre-set done flag** | The registry MUST NOT set a global `_lingshu_cleanup_done = True` before hooks run. Individual hook completion is tracked, not bulk completion. |
+| **CancelledError** | Always propagated. Necessary ContextVar/binding resets from previously-completed hooks are already applied. The cancelled hook is NOT marked complete. The outer caller re-raises `CancelledError` after any final necessary cleanup. |
+| **Deadline exhausted** | If the request deadline is exhausted, necessary context cleanup (ContextVar resets, binding teardown) MUST still execute in a bounded cleanup section. Deadline exhaustion does NOT skip necessary cleanup. |
+| **Other exceptions** | Caught, logged at WARNING level with sanitized summary. Does NOT stop subsequent hooks. Errors are aggregated in `request.ctx._lingshu_cleanup_errors`. The failed hook IS marked complete (no retry). |
 | **Timeout** | Each hook inherits the request's remaining deadline. The registry does not impose its own timeout — that is the policy compiler's job. |
 | **Multi-app isolation** | Each app has its own `AppCleanupRegistry` instance. No shared global state. |
 | **Registration timing** | Registered during middleware installation (not import time). `install_auth_middleware(app)` registers the auth cleanup hook. `install_tenant_middleware(app)` registers the tenant cleanup hook. |
+| **No silent swallowing** | `except Exception: pass` is FORBIDDEN. All exceptions are logged with sanitized summaries and aggregated. |
 
 ### 2.4 Registration example (design only)
 
@@ -286,7 +318,7 @@ src/lingshu/
 |---|---|
 | May import | `core/`, third-party drivers (aiomysql, motor, redis) |
 | Must NOT import | Sanic, `adapters/`, `security/`, `contrib/`, `compat/` |
-| Note | `BusinessModel` does NOT belong in `data/model/` — it is a project service-layer pattern, not a generic data core type |
+| Note | `BusinessModel` does NOT belong in `data/model/` — it is a project service-layer pattern (couples to request lifecycle, auth principal, tenant context). R6 only decouples it from global proxies; old paths kept with `DeprecationWarning`. Final target: scaffold-generated project base class. `data_state`/`created_time`/`updated_time`/logical-delete are backend conventions that must NOT enter generic data core. |
 
 ### 4.6 `compat/`
 

@@ -56,16 +56,27 @@ classified into one of these tiers. The tier governs the deprecation procedure.
 
 ### Current classification (preliminary — finalized in C2-RC)
 
+Authentication API is split across four entry points. Each has a distinct
+tier and migration target:
+
+| Import path | Tier | Notes |
+|---|---|---|
+| `from lingshu.auth import Principal, Authenticator, AuthenticatorChain, JwtBearerAuthenticator, AuthenticationOutcome, configure_authentication, get_principal, require_principal` | **Stable** | New auth API (C2.1/C2.2A). Documented, tested, public facade. These are the import paths framework scaffolds should generate. |
+| `from lingshu.auth import Auth, token_required` | **Does not exist** | `lingshu.auth` does NOT export `Auth` or `token_required`. These are legacy symbols from `middleware/auth.py`. Previous classification incorrectly listed them as Stable under `lingshu.auth`. |
+| `from lingshu.middleware.auth import Auth, token_required` | **Legacy** (→ Deprecated after C2-RC) | Legacy JWT auth class + decorator. Still importable today. Will be moved to `compat/auth.py` in R1 with `DeprecationWarning`. Cannot be deleted until C2-RC freezes the Deprecated tier. |
+| `from lingshu.extensions.auth import Auth, token_required` | **Legacy facade** | Thin re-export of `middleware.auth`. Same lifecycle as above — becomes compat shim in R1. |
+| `from app import Auth` (`app/__init__.py`) | **Project compat entry** | Project-generated re-export `from lingshu.middleware.auth import Auth`. Owned by the project scaffold. Will be updated in R6 scaffold templates to use new Stable API. |
+
+**Non-auth classifications:**
+
 | Import path | Tier | Notes |
 |---|---|---|
 | `from lingshu import request, db, config, logger` | Stable | Top-level facades |
-| `from lingshu.auth import Auth, token_required` | Stable | Legacy auth facade |
-| `from lingshu.tenant import TenantContext, ...` | Stable | Tenant facade |
+| `from lingshu.tenant import TenantContext, TenantResolver, TenantResolverChain, ClaimTenantResolver, configure_tenant_resolution, get_tenant, require_tenant` | Stable | New tenant API (C2.2A). Documented, tested. |
 | `from lingshu.router import RoutePolicy` | Stable | Public route policy |
 | `from lingshu.model import Model, BaseModel` | Stable | Data model base |
-| `from lingshu.system.auth.principal import Principal` | Internal | Used by facade, not documented |
-| `from lingshu.middleware.auth import Auth` | Deprecated | Already in compat plan |
-| `from lingshu.middleware.cache import Cache` | Internal | Zero consumers, but classified before deletion |
+| `from lingshu.system.auth.principal import Principal` | Internal | Used by facade, not documented as public |
+| `from lingshu.middleware.cache import Cache` | Internal | Zero consumers in repo, but classified before any deletion |
 | `from lingshu.system.auth.tenant.*` | Internal | Will move to `contrib/tenant/` |
 
 **Rule:** No import path is deleted until it is classified. The classification
@@ -130,12 +141,19 @@ table is the output of C2-RC and lives in the constitution document.
   - `adapters/sanic/cleanup_registry.py` — `AppCleanupRegistry` (per `src-target-boundaries.md` §2)
   - `adapters/sanic/finalize.py` — `finalize_request_context` (uses cleanup registry)
   - `adapters/sanic/routing.py` — `_route_policy_for_request` + `_request_route_name`
-- Implement `AppCleanupRegistry` as designed in target-boundaries §2.2–§2.4:
+- Implement `AppCleanupRegistry` as designed in target-boundaries §2.2–§2.3:
   - Per-app instance on `app.ctx.cleanup_registry`.
   - Hook registration via `registry.register(hook_id, fn, order=...)`.
-  - Idempotent `run_all()` with `_lingshu_cleanup_done` guard.
-  - `CancelledError` always propagated.
+  - **Per-hook** completion tracking via `_lingshu_completed_hooks` set on
+    `request.ctx`. A hook is marked complete only AFTER it runs (success or
+    exception). No pre-set `_lingshu_cleanup_done` flag.
+  - Same `hook_id` + same `fn` → idempotent no-op.
+  - Same `hook_id` + different `fn` → `CleanupConfigError` at install time.
+  - `CancelledError` always propagated; necessary cleanup from
+    previously-completed hooks is already applied.
+  - Deadline exhausted does NOT skip necessary context cleanup.
   - Other exceptions logged at WARNING, aggregated, NOT swallowed.
+  - `except Exception: pass` is FORBIDDEN.
 - Refactor `_reset_principal_binding` and `_reset_tenant_binding` into
   registered hooks (auth and tenant modules register their own cleanup during
   middleware installation).
@@ -163,9 +181,12 @@ table is the output of C2-RC and lives in the constitution document.
   - Verify auth/tenant cleanup hooks are called on normal/exception/timeout/cancel paths.
   - Verify `CancelledError` is propagated (not swallowed).
   - Verify other exceptions are logged and aggregated (not swallowed).
-  - Verify idempotency: `run_all()` called twice only runs hooks once.
+  - Verify per-hook idempotency: `run_all()` called twice only runs each hook once.
   - Verify per-app isolation: two registries do not interfere.
   - Verify hook ordering: hooks run in ascending `order`, then registration order.
+  - Verify conflicting registration (same `hook_id`, different `fn`) raises `CleanupConfigError`.
+  - Verify duplicate registration (same `hook_id`, same `fn`) is idempotent no-op.
+  - Verify deadline exhaustion does NOT skip necessary context cleanup.
 - Machine boundary test (from RC): assert `adapters/sanic/` may import Sanic,
   `core/` may not.
 - Full suite: ≥446 passed.
@@ -299,37 +320,45 @@ table is the output of C2-RC and lives in the constitution document.
   with `DeprecationWarning`.
 - Move `model/` directory to `data/model/`.
 
-### BusinessModel re-evaluation
+### BusinessModel decision
 
 `BusinessModel` binds a model to the request lifecycle (auth principal, tenant
 context, request-scoped DB connection). This is a **project service-layer
-pattern**, not a generic data-core type. Options:
+pattern**, not a generic data-core type. The decision is finalized as:
 
-| Option | Description | Recommendation |
-|---|---|---|
-| A. Keep in `data/model/` | Treat as part of data layer | ✗ Rejected — couples data core to request lifecycle |
-| B. Move to `contrib/business/` | Treat as optional capability | △ Acceptable fallback |
-| C. Move to scaffold template | Treat as project-generated code | ✓ Preferred |
-
-**Decision for R6 scope:** Keep `BusinessModel` in `data/model/` for now (option A)
-with a `DeprecationWarning` and a note that it will move to scaffold-generated
-code in a future phase. R6 does NOT move it — it only adds the parameterized
-constructor to decouple from global proxies.
-
-**`data_state`/`created_time`/`updated_time`:** These are backend web-service
-conventions, not generic data-core concerns. They stay in the current model
-for backward compat but are documented as "project-layer conventions" and
-flagged for scaffold extraction in a future phase.
+1. **BusinessModel does NOT belong in the generic data core.** It couples to
+   request lifecycle, auth principal, and tenant context — concerns that are
+   outside the scope of `data/model/`.
+2. **R6 does NOT move BusinessModel into `data/model/`.** The old path
+   (`model/business.py` → `data/model/business.py`) is preserved temporarily
+   for backward compatibility.
+3. **Old import paths are kept with `DeprecationWarning`.** Projects that
+   import `from lingshu.model import BusinessModel` continue to work during
+   the deprecation cycle.
+4. **R6 only decouples BusinessModel from global proxies.** The constructor
+   gains optional `request`, `db`, `redis` parameters. When not passed, it
+   falls back to globals with `DeprecationWarning`. This is the ONLY change
+   to BusinessModel in R6.
+5. **Final target: scaffold-generated project service base class.** In a
+   future phase after R6, `BusinessModel` will move to scaffold-generated
+   code (`business_model.py.j2`) or to a separate optional module
+   (`contrib/business/`). R6 does not execute this move.
+6. **`data_state`, `created_time`, `updated_time`, logical-delete fields:**
+   These are backend web-service conventions, NOT generic data-core concerns.
+   They MUST NOT enter the generic `data/model/` core. They stay in the
+   current legacy `model/` code for backward compat during the deprecation
+   cycle. The scaffold template (`business_model.py.j2`) will own these
+   conventions in the target state.
 
 ### Scaffold template update (REQUIRED, not forbidden)
 
 Previous roadmap forbade scaffold changes. This is corrected: **scaffold
 templates MUST generate code using the new stable import paths.**
 
-- Update `src/lingshu/scaffold/templates/` to generate imports using:
+- Update `src/lingshu/scaffold/*.j2` templates to generate imports using:
   - `from lingshu import request, db` (Stable facade — unchanged)
   - `from lingshu.model import Model` (Stable — unchanged path)
-  - `from lingshu.auth import Auth` (Stable facade — unchanged)
+  - `from lingshu.auth import Principal, AuthenticatorChain, JwtBearerAuthenticator, configure_authentication` (Stable facade — new auth API, NOT the legacy `Auth`/`token_required`)
 - Remove any template references to `lingshu.system.*` or `lingshu.middleware.*`.
 - Add a **scaffold smoke test**: generate a project from templates, assert all
   generated imports resolve without error.
