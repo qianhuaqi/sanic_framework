@@ -221,7 +221,8 @@ function Assert-WriterBranchCrossCheck {
     # 5. Non-research branch: must match writer's implementation prefix
     if ($prefix -match "<name>") {
         # human/<name>/phase-<phase>-<slug>
-        if ($BranchName -notmatch "^human/[^/]+/phase-[^/]+$") {
+        # Name must be non-empty and NOT start with 'phase-' (rejects human/phase-bot/phase-...)
+        if ($BranchName -notmatch "^human/(?!phase-)[^/]+/phase-[^/]+$") {
             throw "Human branch '$BranchName' must match human/<name>/phase-<phase>-<slug>. Name must be non-empty and not start with 'phase-'."
         }
     } else {

@@ -528,19 +528,23 @@ def test_human_branch_empty_name_rejected_by_regex():
     verify = _read("scripts/verify-handoff.ps1")
     resume = _read("scripts/resume-work.ps1")
 
-    # Both scripts must use the strict regex, NOT a -replace approach
-    assert '"^human/[^/]+/phase-[^/]+$"' in verify
-    assert '"^human/[^/]+/phase-[^/]+$"' in resume
+    # Both scripts must use the strict regex with negative lookahead, NOT a -replace approach
+    assert '"^human/(?!phase-)[^/]+/phase-[^/]+$"' in verify
+    assert '"^human/(?!phase-)[^/]+/phase-[^/]+$"' in resume
     # Must NOT use the old -replace approach
     assert '-replace "<name>", ""' not in verify
     assert '-replace "<name>", ""' not in resume
+    # Must NOT use the old regex without lookahead
+    assert '"^human/[^/]+/phase-[^/]+$"' not in verify
+    assert '"^human/[^/]+/phase-[^/]+$"' not in resume
 
-    # The regex ^human/[^/]+/phase-[^/]+$ does NOT match:
+    # The regex ^human/(?!phase-)[^/]+/phase-[^/]+$ does NOT match:
     import re
-    pattern = r"^human/[^/]+/phase-[^/]+$"
+    pattern = r"^human/(?!phase-)[^/]+/phase-[^/]+$"
     assert not re.match(pattern, "human//phase-c2-r1-auth")  # empty name
     assert not re.match(pattern, "human/phase-c2-r1-auth")   # missing name
     assert not re.match(pattern, "human/alice/not-phase-x")  # no phase-
+    assert not re.match(pattern, "human/phase-bot/phase-c2-r1-auth")  # name starts with phase-
     # But DOES match valid:
     assert re.match(pattern, "human/alice/phase-c2-r1-auth")
 
@@ -557,6 +561,15 @@ def test_human_branch_missing_name_segment_fails(tmp_path):
 def test_human_branch_no_phase_segment_fails(tmp_path):
     """human/alice/not-phase-x must fail (no /phase- segment)."""
     bad_branch = "human/alice/not-phase-x"
+    work = _prepare_human_repo(tmp_path, branch=bad_branch)
+    result = _powershell(work / "scripts" / "verify-handoff.ps1", work, branch=bad_branch)
+    assert result.returncode != 0
+    assert "must match human/" in result.stderr
+
+
+def test_human_branch_name_starting_with_phase_fails(tmp_path):
+    """human/phase-bot/phase-c2-r1-auth must fail (name starts with 'phase-')."""
+    bad_branch = "human/phase-bot/phase-c2-r1-auth"
     work = _prepare_human_repo(tmp_path, branch=bad_branch)
     result = _powershell(work / "scripts" / "verify-handoff.ps1", work, branch=bad_branch)
     assert result.returncode != 0

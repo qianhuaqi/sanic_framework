@@ -97,9 +97,8 @@
       "import_path": "lingshu.middleware.cache",
       "symbols": ["Cache"],
       "tier": "Legacy",
-      "kind": "facade",
       "compat_target": "compat/cache.py",
-      "notes": "Legacy cache facade. No external consumer evidence. Managed as Legacy."
+      "notes": "Legacy cache implementation module. No external consumer evidence. Managed as Legacy."
     },
     {
       "import_path": "lingshu.extensions.cache",

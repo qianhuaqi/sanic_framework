@@ -361,46 +361,105 @@ def test_cache_facades_are_legacy():
 
 
 def test_legacy_import_paths_exist():
-    """Every legacy import_path must be importable and symbols must exist.
-
-    Fail closed: ImportError and AttributeError both cause test failure.
-    """
-    import importlib
+    """Every legacy entry must pass the shared fail-closed validator."""
     contract = _read_json("docs/architecture/architecture-contract.json")
     for entry in contract["legacy_api_candidates"]:
-        path = entry["import_path"]
-        mod = importlib.import_module(path)
+        _validate_legacy_entry(entry)
+
+
+def _validate_legacy_entry(entry: dict):
+    """Shared fail-closed validator for a legacy_api_candidates entry.
+
+    1. import_path must be importable (ImportError fails).
+    2. Every symbol must exist (AttributeError fails).
+    3. If kind == 'facade':
+       - module must define __all__ (missing __all__ fails).
+       - every contract symbol must be in __all__.
+    """
+    import importlib
+
+    path = entry["import_path"]
+    mod = importlib.import_module(path)
+    for sym in entry["symbols"]:
+        assert hasattr(mod, sym), (
+            f"Legacy symbol '{sym}' not found in module '{path}'"
+        )
+    if entry.get("kind") == "facade":
+        mod_all = getattr(mod, "__all__", None)
+        assert mod_all is not None, (
+            f"Facade module '{path}' must define __all__"
+        )
         for sym in entry["symbols"]:
-            assert hasattr(mod, sym), (
-                f"Legacy symbol '{sym}' not found in module '{path}'"
+            assert sym in mod_all, (
+                f"Facade symbol '{sym}' not in {path}.__all__"
             )
-        if entry.get("kind") == "facade":
-            mod_all = getattr(mod, "__all__", None)
-            if mod_all is not None:
-                for sym in entry["symbols"]:
-                    assert sym in mod_all, (
-                        f"Facade symbol '{sym}' not in {path}.__all__"
-                    )
 
 
 def test_nonexistent_legacy_import_fails(tmp_path):
-    """A contract with a non-existent import_path must cause failure.
-
-    This is a counter-example test proving the scanner fails closed.
-    """
-    import importlib
-
+    """Counter-example: a non-existent import_path must fail the validator."""
     fake_entry = {
         "import_path": "lingshu.nonexistent.fake_module_xyz",
         "symbols": ["FakeSymbol"],
         "tier": "Legacy",
     }
-
     try:
-        importlib.import_module(fake_entry["import_path"])
+        _validate_legacy_entry(fake_entry)
     except ImportError:
-        pass  # expected — this proves ImportError is raised
-    else:
-        raise AssertionError(
-            f"import_module('{fake_entry['import_path']}') should have raised ImportError"
+        return
+    raise AssertionError(
+        "Validator should have raised ImportError for a non-existent module"
+    )
+
+
+def test_facade_without_all_fails(tmp_path, monkeypatch):
+    """Counter-example: a facade entry whose module lacks __all__ must fail."""
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("lingshu._test_no_all_facade")
+    fake_mod.FakeSymbol = object()
+    # deliberately do NOT set __all__
+    monkeypatch.setitem(sys.modules, "lingshu._test_no_all_facade", fake_mod)
+
+    fake_entry = {
+        "import_path": "lingshu._test_no_all_facade",
+        "symbols": ["FakeSymbol"],
+        "tier": "Legacy",
+        "kind": "facade",
+    }
+    try:
+        _validate_legacy_entry(fake_entry)
+    except AssertionError as exc:
+        assert "__all__" in str(exc), f"Wrong failure message: {exc}"
+        return
+    raise AssertionError(
+        "Validator should have failed for facade without __all__"
+    )
+
+
+def test_facade_symbol_not_in_all_fails(tmp_path, monkeypatch):
+    """Counter-example: a facade symbol not in __all__ must fail."""
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("lingshu._test_missing_all_entry")
+    fake_mod.FakeSymbol = object()
+    fake_mod.__all__ = ["OtherSymbol"]
+    monkeypatch.setitem(sys.modules, "lingshu._test_missing_all_entry", fake_mod)
+
+    fake_entry = {
+        "import_path": "lingshu._test_missing_all_entry",
+        "symbols": ["FakeSymbol"],
+        "tier": "Legacy",
+        "kind": "facade",
+    }
+    try:
+        _validate_legacy_entry(fake_entry)
+    except AssertionError as exc:
+        assert "not in" in str(exc) and "__all__" in str(exc), (
+            f"Wrong failure message: {exc}"
         )
+        return
+    raise AssertionError(
+        "Validator should have failed for symbol not in __all__"
+    )
