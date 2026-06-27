@@ -1,0 +1,230 @@
+{
+  "schema_version": "1.0.0",
+  "constitution_version": "1.0",
+  "ownership_roots": {
+    "framework": "src/lingshu",
+    "project_app": "app",
+    "project_config": "config",
+    "scaffold_templates": "src/lingshu/scaffold/*.j2",
+    "framework_language": "src/lingshu/language",
+    "project_language": "app/language"
+  },
+  "stable_public_modules": [
+    "lingshu",
+    "lingshu.auth",
+    "lingshu.tenant",
+    "lingshu.router",
+    "lingshu.model"
+  ],
+  "stable_public_symbols": {
+    "lingshu": [
+      "APIException",
+      "abort",
+      "app",
+      "config",
+      "db",
+      "language",
+      "logger",
+      "request"
+    ],
+    "lingshu.auth": [
+      "AuthResult",
+      "AuthenticationOutcome",
+      "AuthenticationRejected",
+      "Authenticator",
+      "AuthenticatorChain",
+      "JwtBearerAuthenticator",
+      "Principal",
+      "configure_authentication",
+      "get_principal",
+      "require_principal"
+    ],
+    "lingshu.tenant": [
+      "ClaimTenantResolver",
+      "TenantContext",
+      "TenantResolutionOutcome",
+      "TenantResolutionResult",
+      "TenantResolver",
+      "TenantResolverChain",
+      "configure_tenant_resolution",
+      "get_tenant",
+      "require_tenant"
+    ],
+    "lingshu.router": [
+      "RoutePolicy"
+    ],
+    "lingshu.model": [
+      "BaseModel",
+      "BusinessModel",
+      "Model"
+    ]
+  },
+  "legacy_api_candidates": [
+    {
+      "import_path": "lingshu.middleware.auth",
+      "symbols": ["Auth", "token_required"],
+      "tier": "Legacy",
+      "compat_target": "compat/auth.py",
+      "notes": "Legacy JWT auth class and decorator. Gets compat shim in R1."
+    },
+    {
+      "import_path": "lingshu.extensions.auth",
+      "symbols": ["Auth", "token_required"],
+      "tier": "Legacy facade",
+      "compat_target": "compat/auth.py",
+      "notes": "Thin re-export of middleware.auth."
+    },
+    {
+      "import_path": "lingshu.middleware.cache",
+      "symbols": ["Cache"],
+      "tier": "Internal",
+      "compat_target": "compat/cache.py",
+      "notes": "Zero consumers in repo. Classified before deletion."
+    },
+    {
+      "import_path": "lingshu.middleware.sign",
+      "symbols": ["check_sign"],
+      "tier": "Legacy",
+      "compat_target": "compat/signing.py",
+      "notes": "Legacy sign verification."
+    },
+    {
+      "import_path": "lingshu.middleware.maintenance",
+      "symbols": ["check_maintenance"],
+      "tier": "Legacy",
+      "compat_target": "compat/maintenance.py",
+      "notes": "Legacy maintenance decorator."
+    },
+    {
+      "import_path": "lingshu.middleware.params",
+      "symbols": ["I"],
+      "tier": "Legacy",
+      "compat_target": "compat/params.py",
+      "notes": "Legacy param accessor."
+    },
+    {
+      "import_path": "lingshu.middleware.crypt_des",
+      "symbols": ["encrypt_data", "decrypt_data"],
+      "tier": "Legacy",
+      "compat_target": "compat/crypt.py",
+      "notes": "Legacy DES-CBC encryption."
+    },
+    {
+      "import_path": "lingshu.middleware.crypt_params",
+      "symbols": ["CI"],
+      "tier": "Legacy",
+      "compat_target": "compat/params.py",
+      "notes": "Legacy encrypted param accessor."
+    },
+    {
+      "import_path": "lingshu.middleware.json",
+      "symbols": ["CustomJSONEncoder"],
+      "tier": "Legacy",
+      "compat_target": "compat/json_encoder.py",
+      "notes": "Custom JSON encoder."
+    }
+  ],
+  "deprecated_api_candidates": [],
+  "target_layers": {
+    "core": {
+      "path": "src/lingshu/core",
+      "may_import": ["stdlib"],
+      "forbidden_import_prefixes": [
+        "sanic",
+        "jwt",
+        "aiomysql",
+        "motor",
+        "redis",
+        "lingshu.security",
+        "lingshu.contrib",
+        "lingshu.adapters",
+        "lingshu.data",
+        "lingshu.compat",
+        "lingshu.middleware",
+        "lingshu.system"
+      ]
+    },
+    "security_auth": {
+      "path": "src/lingshu/security/auth",
+      "may_import": ["stdlib", "lingshu.core", "jwt"],
+      "forbidden_import_prefixes": [
+        "sanic",
+        "lingshu.adapters",
+        "lingshu.contrib.tenant",
+        "lingshu.data",
+        "lingshu.compat",
+        "lingshu.middleware"
+      ]
+    },
+    "contrib_tenant": {
+      "path": "src/lingshu/contrib/tenant",
+      "may_import": ["stdlib", "lingshu.core", "lingshu.security.auth"],
+      "forbidden_import_prefixes": [
+        "sanic",
+        "lingshu.adapters",
+        "lingshu.data",
+        "lingshu.compat",
+        "lingshu.middleware"
+      ]
+    },
+    "data": {
+      "path": "src/lingshu/data",
+      "may_import": ["stdlib", "lingshu.core", "aiomysql", "motor", "redis"],
+      "forbidden_import_prefixes": [
+        "sanic",
+        "lingshu.system.proxies",
+        "lingshu.security",
+        "lingshu.contrib",
+        "lingshu.compat",
+        "lingshu.middleware"
+      ]
+    },
+    "adapters_sanic": {
+      "path": "src/lingshu/adapters/sanic",
+      "may_import": ["stdlib", "lingshu.core", "lingshu.security.auth", "lingshu.contrib.tenant", "sanic"],
+      "forbidden_import_prefixes": [
+        "lingshu.data",
+        "lingshu.compat",
+        "lingshu.middleware"
+      ]
+    },
+    "compat": {
+      "path": "src/lingshu/compat",
+      "may_import": ["legacy implementations"],
+      "forbidden_import_prefixes": []
+    }
+  },
+  "forbidden_import_prefixes": {
+    "project_app": ["lingshu.system"],
+    "scaffold": ["lingshu.system", "lingshu.middleware"]
+  },
+  "project_forbidden_imports": [
+    "lingshu.system"
+  ],
+  "scaffold_forbidden_imports": [
+    "lingshu.system",
+    "lingshu.middleware"
+  ],
+  "architecture_docs": [
+    "docs/architecture/src-convergence-audit.md",
+    "docs/architecture/src-target-boundaries.md",
+    "docs/architecture/src-migration-roadmap.md",
+    "docs/architecture/ownership-boundaries.md",
+    "docs/architecture/dependency-rules.md",
+    "docs/architecture/public-api-contract.md"
+  ],
+  "adrs": [
+    "docs/decisions/ADR-001-framework-project-ownership.md",
+    "docs/decisions/ADR-002-public-api-and-deprecation.md",
+    "docs/decisions/ADR-003-layer-dependency-direction.md",
+    "docs/decisions/ADR-004-tenant-optional-capability.md",
+    "docs/decisions/ADR-005-development-authority-and-merge-control.md"
+  ],
+  "development_docs": [
+    "docs/development/DEVELOPMENT_CONSTITUTION.md",
+    "docs/development/CURRENT_PHASE.md",
+    "docs/development/HANDOFF.md",
+    "docs/development/TASK_TEMPLATE.md",
+    "docs/development/REVIEW_CHECKLIST.md"
+  ]
+}

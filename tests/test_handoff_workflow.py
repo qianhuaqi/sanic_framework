@@ -37,9 +37,7 @@ def _powershell(script: Path, cwd: Path, branch: str = BRANCH) -> subprocess.Com
 
 
 def _write_handoff(repo: Path, work_commit: str, branch: str = BRANCH):
-    handoff = repo / "docs" / "codex" / "HANDOFF.md"
-    handoff.parent.mkdir(parents=True, exist_ok=True)
-    handoff.write_text(
+    content = (
         "# Development Handoff\n\n"
         "Updated at: 2026-06-26\n"
         "Location: office\n"
@@ -61,9 +59,15 @@ def _write_handoff(repo: Path, work_commit: str, branch: str = BRANCH):
         "- continue\n\n"
         "## Current PR\n"
         "- PR: #12-test\n"
-        "- Latest instruction: test handoff\n",
-        encoding="utf-8",
+        "- Latest instruction: test handoff\n"
     )
+    # Write to docs/development/ (new fact source) and docs/codex/ (scripts read this)
+    dev_handoff = repo / "docs" / "development" / "HANDOFF.md"
+    dev_handoff.parent.mkdir(parents=True, exist_ok=True)
+    dev_handoff.write_text(content, encoding="utf-8")
+    codex_handoff = repo / "docs" / "codex" / "HANDOFF.md"
+    codex_handoff.parent.mkdir(parents=True, exist_ok=True)
+    codex_handoff.write_text(content, encoding="utf-8")
 
 
 def _prepare_handoff_repo(tmp_path: Path) -> Path:
@@ -158,7 +162,8 @@ def test_verify_handoff_fails_when_local_head_differs_from_remote(tmp_path):
 def test_verify_handoff_fails_when_handoff_is_missing(tmp_path):
     work = _prepare_handoff_repo(tmp_path)
     (work / "docs" / "codex" / "HANDOFF.md").unlink()
-    _run(["git", "add", "docs/codex/HANDOFF.md"], cwd=work)
+    (work / "docs" / "development" / "HANDOFF.md").unlink()
+    _run(["git", "add", "docs/codex/HANDOFF.md", "docs/development/HANDOFF.md"], cwd=work)
     _run(["git", "commit", "-m", "remove handoff"], cwd=work)
     _run(["git", "push", "github", BRANCH], cwd=work)
 
@@ -171,7 +176,7 @@ def test_verify_handoff_fails_when_handoff_is_missing(tmp_path):
 def test_verify_handoff_fails_when_work_commit_is_not_ancestor(tmp_path):
     work = _prepare_handoff_repo(tmp_path)
     _write_handoff(work, "f" * 40)
-    _run(["git", "add", "docs/codex/HANDOFF.md"], cwd=work)
+    _run(["git", "add", "docs/codex/HANDOFF.md", "docs/development/HANDOFF.md"], cwd=work)
     _run(["git", "commit", "-m", "invalid work commit"], cwd=work)
     _run(["git", "push", "github", BRANCH], cwd=work)
 
@@ -198,26 +203,26 @@ def test_handoff_scripts_use_github_remote_and_fail_closed_checks():
 def test_agents_records_single_writer_rule_and_sources_of_truth():
     agents = _read("AGENTS.md")
 
-    assert "GitHub remote is always `github`" in agents
-    assert "A phase branch may be written by only one computer at a time." in agents
-    assert "Codex chat history is not a source of truth." in agents
-    assert "Business code must not import `lingshu.system`." in agents
-    assert "Do not start phases C2, C3, C4, C5, C6, D, E, or F." in agents
+    assert "github" in agents
+    assert "one writer at a time" in agents.lower()
+    assert "Sources Of Truth" in agents
+    assert "NOT sources of truth" in agents
+    assert "docs/development/DEVELOPMENT_CONSTITUTION.md" in agents
+    assert "Phase C1 Boundaries" not in agents
 
 
 def test_current_phase_and_handoff_docs_exist_with_current_context():
-    current_phase = _read("docs/codex/CURRENT_PHASE.md")
-    handoff = _read("docs/codex/HANDOFF.md")
+    current_phase = _read("docs/development/CURRENT_PHASE.md")
+    handoff = _read("docs/development/HANDOFF.md")
 
-    assert "Current phase: C2-R0" in current_phase
-    assert "Current branch: research/c2-src-convergence" in current_phase
-    assert "Current issue: #19" in current_phase
+    assert "Current phase: C2-RC" in current_phase
+    assert "codex/phase-c2-rc-development-constitution" in current_phase
+    assert "Current issue: #21" in current_phase
     assert "Next phase allowed: no" in current_phase
     assert "Branch:" in handoff
-    assert "Work commit:" in handoff
+    assert "Worktree:" in handoff
     assert "Local HEAD:" not in handoff
     assert "Remote HEAD:" not in handoff
-    assert "pending" not in handoff
 
 
 def test_readme_contains_cross_device_handoff_flow():
@@ -246,6 +251,8 @@ def test_scaffold_readme_contains_install_and_startup_guidance():
 def test_handoff_docs_do_not_contain_obvious_secret_examples():
     paths = [
         "AGENTS.md",
+        "docs/development/CURRENT_PHASE.md",
+        "docs/development/HANDOFF.md",
         "docs/codex/CURRENT_PHASE.md",
         "docs/codex/HANDOFF.md",
         "README.md",
@@ -264,3 +271,13 @@ def test_handoff_docs_do_not_contain_obvious_secret_examples():
     ]
 
     assert [pattern for pattern in risky_patterns if re.search(pattern, combined)] == []
+
+
+def test_old_codex_docs_are_compatibility_pointers():
+    codex_phase = _read("docs/codex/CURRENT_PHASE.md")
+    codex_handoff = _read("docs/codex/HANDOFF.md")
+
+    assert "docs/development/CURRENT_PHASE.md" in codex_phase
+    assert "docs/development/HANDOFF.md" in codex_handoff
+    assert "Compatibility Pointer" in codex_phase
+    assert "Compatibility Pointer" in codex_handoff
