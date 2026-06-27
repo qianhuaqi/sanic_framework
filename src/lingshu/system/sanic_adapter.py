@@ -99,6 +99,7 @@ def _exit_execution_context(raw_request):
 def reset_request_context(raw_request):
     _exit_execution_context(raw_request)
     _reset_principal_binding(raw_request)
+    _reset_tenant_binding(raw_request)
     context = get_request_context(raw_request)
     if context is not None:
         context.reset()
@@ -119,6 +120,19 @@ def _reset_principal_binding(raw_request):
         except Exception:
             pass
         setattr(ctx, "lingshu_principal_binding", None)
+
+
+def _reset_tenant_binding(raw_request):
+    ctx = getattr(raw_request, "ctx", None)
+    if ctx is None:
+        return
+    binding = getattr(ctx, "lingshu_tenant_binding", None)
+    if binding is not None:
+        try:
+            binding.reset()
+        except Exception:
+            pass
+        setattr(ctx, "lingshu_tenant_binding", None)
 
 
 _REQUEST_TASK_CLEANUP_BUDGET = 2.0
@@ -209,6 +223,14 @@ def detach_request_context_after_task(raw_request):
         except Exception:
             pass
         setattr(ctx, "lingshu_principal_binding", None)
+
+    tenant_binding = getattr(ctx, "lingshu_tenant_binding", None)
+    if tenant_binding is not None:
+        try:
+            tenant_binding.detach_after_task()
+        except Exception:
+            pass
+        setattr(ctx, "lingshu_tenant_binding", None)
 
     context = get_request_context(raw_request)
     if context is not None:

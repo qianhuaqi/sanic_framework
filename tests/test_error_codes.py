@@ -144,7 +144,7 @@ def test_meta_error_codes_endpoint_is_available_in_testing():
     assert response.json["code"] == 0
     data = response.json["data"]
     assert data["locales"] == ["zh-CN", "en-US"]
-    assert data["summary"] == {"total": 31, "modules": 5, "reserved": 1}
+    assert data["summary"] == {"total": 36, "modules": 5, "reserved": 1}
     assert data["modules"][0]["module"] == "user"
     assert data["modules"][0]["total"] == 3
     assert all("codes" in bucket for bucket in data["modules"])

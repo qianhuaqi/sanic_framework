@@ -108,6 +108,13 @@ class RequestProxy:
 
         return current_principal.get()
 
+    @property
+    def tenant(self):
+        current_execution_context()  # raises NoRequestContextError if no context
+        from lingshu.system.auth.tenant.binding import current_tenant
+
+        return current_tenant.get()
+
 
 class DatabaseProxy:
     @property

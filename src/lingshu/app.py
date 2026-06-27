@@ -59,6 +59,9 @@ def create_app():
     from lingshu.system.auth.middleware import install_authentication_middleware
     install_authentication_middleware(app)
 
+    from lingshu.system.auth.tenant.middleware import install_tenant_middleware
+    install_tenant_middleware(app)
+
     register_blueprints(app, _get_project_blueprints(config))
     register_lifecycle(app, _get_project_extension_modules())
     _register_public_static(app)
