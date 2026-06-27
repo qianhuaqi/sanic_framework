@@ -20,7 +20,7 @@ Next phase allowed: no
 
 Architecture audit of the entire `src/lingshu` codebase: identify structural
 debt, overlapping modules, circular dependencies, and hot files. Define target
-layer boundaries and a phased migration roadmap (C2-R1 through C2-R6).
+layer boundaries and a phased migration roadmap (C2-RC, then C2-R1 through C2-R6).
 
 This is a design-only phase — no production code changes.
 
@@ -29,9 +29,10 @@ This is a design-only phase — no production code changes.
 - `docs/architecture/src-convergence-audit.md` — full module inventory, dependency
   analysis, overlap matrix, hot files, technical-debt priority.
 - `docs/architecture/src-target-boundaries.md` — target directory structure,
-  layer dependency rules, cleanup-hook registry pattern, tenant positioning.
-- `docs/architecture/src-migration-roadmap.md` — phased migration plan (R1-R6)
-  with scope, forbidden changes, compat strategy, test contracts, rollback points.
+  layer dependency rules, app-scoped cleanup registry, auth/adapter separation,
+  no `public/` decision, tenant positioning.
+- `docs/architecture/src-migration-roadmap.md` — phased migration plan with
+  C2-RC prerequisite gate, API stability tiers, deprecation cycle, R1-R6.
 
 ## Test Baseline
 
@@ -56,6 +57,7 @@ Moving directories
 Deleting code
 Modifying imports
 Modifying public API
+Starting C2-RC implementation
 Starting C2-R1 through C2-R6 implementation
 Starting C2.2B or C3
 ```
