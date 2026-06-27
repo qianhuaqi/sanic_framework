@@ -45,6 +45,18 @@ class TenantResolverChain:
     def register(self, resolver: TenantResolver) -> TenantResolver:
         if not hasattr(resolver, "resolver_id") or not resolver.resolver_id:
             raise ValueError("TenantResolver must have a non-empty resolver_id")
+        if not isinstance(resolver.resolver_id, str):
+            raise ValueError(
+                f"TenantResolver.resolver_id must be str, got {type(resolver.resolver_id).__name__}"
+            )
+        if resolver.resolver_id != resolver.resolver_id.strip():
+            raise ValueError(
+                "TenantResolver.resolver_id must not have leading or trailing whitespace"
+            )
+        if any(r.resolver_id == resolver.resolver_id for r in self._resolvers):
+            raise ValueError(
+                f"Duplicate resolver_id: {resolver.resolver_id!r}"
+            )
         self._resolvers.append(resolver)
         return resolver
 

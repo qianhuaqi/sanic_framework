@@ -21,6 +21,17 @@ def _deep_freeze(value: Any) -> Any:
     return value
 
 
+def _validate_id(value: str, field_name: str) -> str:
+    """Strict validation: must be a non-empty, non-whitespace string with no str() conversion."""
+    if not isinstance(value, str):
+        raise TypeError(f"TenantContext.{field_name} must be a str, got {type(value).__name__}")
+    if not value:
+        raise ValueError(f"TenantContext.{field_name} must not be empty")
+    if value != value.strip():
+        raise ValueError(f"TenantContext.{field_name} must not have leading or trailing whitespace")
+    return value
+
+
 @dataclass(frozen=True)
 class TenantContext:
     """Immutable tenant context produced by a TenantResolver.
@@ -38,10 +49,8 @@ class TenantContext:
     )
 
     def __post_init__(self):
-        if not isinstance(self.tenant_id, str) or not self.tenant_id:
-            raise ValueError("TenantContext.tenant_id must be a non-empty string")
-        if not isinstance(self.resolver_id, str) or not self.resolver_id:
-            raise ValueError("TenantContext.resolver_id must be a non-empty string")
+        _validate_id(self.tenant_id, "tenant_id")
+        _validate_id(self.resolver_id, "resolver_id")
         if not isinstance(self.attributes, MappingProxyType):
             raise TypeError("TenantContext.attributes must be a MappingProxyType")
 
@@ -54,9 +63,11 @@ class TenantContext:
         attributes: dict[str, Any] | None = None,
     ) -> TenantContext:
         """Create a TenantContext with deep-frozen attributes."""
+        _validate_id(tenant_id, "tenant_id")
+        _validate_id(resolver_id, "resolver_id")
         return cls(
-            tenant_id=str(tenant_id),
-            resolver_id=str(resolver_id),
+            tenant_id=tenant_id,
+            resolver_id=resolver_id,
             attributes=MappingProxyType(_deep_freeze(dict(attributes))) if attributes else MappingProxyType({}),
         )
 

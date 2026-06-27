@@ -168,6 +168,57 @@ class TestTenantContext:
         assert "s3cret" not in r
         assert "t" in r
 
+    # --- Security remediation: strict type validation ---
+
+    def test_tenant_id_integer_rejected(self):
+        with pytest.raises(TypeError):
+            TenantContext.create(123, "claim")
+
+    def test_tenant_id_none_rejected(self):
+        with pytest.raises(TypeError):
+            TenantContext.create(None, "claim")
+
+    def test_tenant_id_str_dunder_rejected(self):
+        class FakeId:
+            def __str__(self):
+                return "fake"
+        with pytest.raises(TypeError):
+            TenantContext.create(FakeId(), "claim")
+
+    def test_tenant_id_whitespace_only_rejected(self):
+        with pytest.raises(ValueError):
+            TenantContext.create("   ", "claim")
+
+    def test_tenant_id_leading_space_rejected(self):
+        with pytest.raises(ValueError):
+            TenantContext.create(" tenant-a", "claim")
+
+    def test_tenant_id_trailing_space_rejected(self):
+        with pytest.raises(ValueError):
+            TenantContext.create("tenant-a ", "claim")
+
+    def test_resolver_id_integer_rejected(self):
+        with pytest.raises(TypeError):
+            TenantContext.create("t-1", 123)
+
+    def test_resolver_id_none_rejected(self):
+        with pytest.raises(TypeError):
+            TenantContext.create("t-1", None)
+
+    def test_resolver_id_whitespace_only_rejected(self):
+        with pytest.raises(ValueError):
+            TenantContext.create("t-1", "   ")
+
+    def test_no_silent_trim(self):
+        """Whitespace-padded tenant_id must not be silently trimmed."""
+        with pytest.raises(ValueError):
+            TenantContext.create(" tenant-a ", "claim")
+
+    def test_direct_construction_also_strict(self):
+        """__post_init__ must also reject non-str — not just create()."""
+        with pytest.raises(TypeError):
+            TenantContext(tenant_id=123, resolver_id="r")
+
 
 # ---------------------------------------------------------------------------
 # 2. TenantResolutionResult
@@ -286,6 +337,41 @@ class TestTenantResolverChain:
         chain.register(StubTenantResolver("x"))
         assert not chain.is_empty
 
+    # --- Security remediation: resolver_id uniqueness and strictness ---
+
+    def test_duplicate_resolver_id_raises_valueerror(self):
+        chain = TenantResolverChain()
+        chain.register(StubTenantResolver("dup"))
+        with pytest.raises(ValueError, match="Duplicate resolver_id"):
+            chain.register(StubTenantResolver("dup"))
+
+    def test_non_string_resolver_id_rejected(self):
+        chain = TenantResolverChain()
+
+        class IntId:
+            resolver_id = 123
+            async def resolve(self, request, principal): pass
+        with pytest.raises(ValueError, match="must be str"):
+            chain.register(IntId())  # type: ignore[arg-type]
+
+    def test_whitespace_only_resolver_id_rejected(self):
+        chain = TenantResolverChain()
+
+        class SpaceId:
+            resolver_id = "   "
+            async def resolve(self, request, principal): pass
+        with pytest.raises(ValueError):
+            chain.register(SpaceId())  # type: ignore[arg-type]
+
+    def test_leading_space_resolver_id_rejected(self):
+        chain = TenantResolverChain()
+
+        class LeadingSpace:
+            resolver_id = " r"
+            async def resolve(self, request, principal): pass
+        with pytest.raises(ValueError, match="leading or trailing whitespace"):
+            chain.register(LeadingSpace())  # type: ignore[arg-type]
+
 
 # ---------------------------------------------------------------------------
 # 4. ClaimTenantResolver
@@ -316,11 +402,12 @@ class TestClaimTenantResolver:
         outcome = _run(resolver.resolve(None, principal))
         assert outcome.result is TenantResolutionResult.MALFORMED
 
-    def test_claim_none_returns_missing(self):
+    def test_claim_none_returns_malformed(self):
+        """Claim exists but value is None → MALFORMED (short-circuit, not MISSING)."""
         resolver = ClaimTenantResolver(claim_name="tenant_id", validator=lambda t, p: True)
         principal = self._make_principal({"tenant_id": None})
         outcome = _run(resolver.resolve(None, principal))
-        assert outcome.result is TenantResolutionResult.MISSING
+        assert outcome.result is TenantResolutionResult.MALFORMED
 
     def test_claim_empty_string_returns_malformed(self):
         resolver = ClaimTenantResolver(claim_name="tenant_id", validator=lambda t, p: True)
@@ -360,6 +447,96 @@ class TestClaimTenantResolver:
     def test_satisfies_protocol(self):
         resolver = ClaimTenantResolver(claim_name="t", validator=lambda x, y: True)
         assert isinstance(resolver, TenantResolver)
+
+    # --- Security remediation: fail-closed validator ---
+
+    def test_sync_validator_return_none_is_internal_error(self):
+        """Non-bool return (None) → INTERNAL_ERROR, not success."""
+        resolver = ClaimTenantResolver(claim_name="tid", validator=lambda t, p: None)
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.INTERNAL_ERROR
+
+    def test_sync_validator_return_string_is_internal_error(self):
+        resolver = ClaimTenantResolver(claim_name="tid", validator=lambda t, p: "yes")
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.INTERNAL_ERROR
+
+    def test_sync_validator_return_int_is_internal_error(self):
+        resolver = ClaimTenantResolver(claim_name="tid", validator=lambda t, p: 1)
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.INTERNAL_ERROR
+
+    def test_sync_validator_return_object_is_internal_error(self):
+        resolver = ClaimTenantResolver(
+            claim_name="tid",
+            validator=lambda t, p: object(),
+        )
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.INTERNAL_ERROR
+
+    def test_async_validator_true_succeeds(self):
+        async def validator(tid, principal):
+            return True
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.is_success
+
+    def test_async_validator_false_returns_forbidden(self):
+        async def validator(tid, principal):
+            return False
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.FORBIDDEN
+
+    def test_async_validator_none_is_internal_error(self):
+        async def validator(tid, principal):
+            return None
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.INTERNAL_ERROR
+
+    def test_async_validator_exception_is_internal_error(self):
+        async def validator(tid, principal):
+            raise RuntimeError("connection refused at 10.0.0.5")
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.INTERNAL_ERROR
+        assert "10.0.0.5" not in repr(outcome)
+
+    def test_async_validator_cancelled_propagates(self):
+        """asyncio.CancelledError must propagate, never be swallowed."""
+        async def validator(tid, principal):
+            raise asyncio.CancelledError()
+
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        with pytest.raises(asyncio.CancelledError):
+            _run(resolver.resolve(None, principal))
+
+    def test_attributes_claim_removed(self):
+        """ClaimTenantResolver no longer accepts attributes_claim parameter."""
+        with pytest.raises(TypeError):
+            ClaimTenantResolver(
+                claim_name="tid",
+                validator=lambda t, p: True,
+                attributes_claim="attrs",
+            )
+
+    def test_resolver_id_no_str_conversion(self):
+        with pytest.raises((TypeError, ValueError)):
+            ClaimTenantResolver(
+                claim_name="tid",
+                validator=lambda t, p: True,
+                resolver_id=123,  # type: ignore[arg-type]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -820,3 +997,250 @@ class TestCreateAppTenantIntegration:
 
         _, response = asyncio.run(app.asgi_client.get("/tpi/open"))
         assert response.status == 200
+
+
+# ---------------------------------------------------------------------------
+# 15. Security remediation: lifecycle, public API, 403 contract
+# ---------------------------------------------------------------------------
+
+class TestTimeoutCleanup:
+    """Timeout path must clean up tenant binding."""
+
+    def test_tenant_binding_cleanup_on_timeout(self):
+        from lingshu.system import sanic_adapter
+        from lingshu.system.auth.middleware import (
+            install_authentication_middleware,
+            set_authenticator_chain,
+        )
+        from lingshu.system.auth.tenant.middleware import (
+            install_tenant_middleware,
+            set_tenant_resolver_chain,
+        )
+
+        app = Sanic("tenant-timeout")
+        sanic_adapter.install_context_middleware(app)
+        bp = Blueprint("tenant-timeout-bp", url_prefix="/ttimeout")
+
+        handler_started = asyncio.Event()
+        captured = {}
+
+        @bp.get("/slow", name="slow")
+        async def slow_handler(request):
+            from lingshu.response import json_response
+            captured["binding"] = request.ctx.lingshu_tenant_binding
+            handler_started.set()
+            await asyncio.sleep(30)
+            return json_response({"ok": True})
+
+        set_route_policy(slow_handler, RoutePolicyDefinition(tenant_required=True, timeout=0.05))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        auth_chain = AuthenticatorChain()
+        auth_chain.register(StubAuthenticator("jwt", mode="success", subject="u"))
+        set_authenticator_chain(app, auth_chain)
+
+        tenant_chain = TenantResolverChain()
+        tenant_chain.register(StubTenantResolver("r", mode="success", tenant_id="t-to"))
+        set_tenant_resolver_chain(app, tenant_chain)
+
+        install_authentication_middleware(app)
+        install_tenant_middleware(app)
+
+        async def scenario():
+            task = asyncio.ensure_future(app.asgi_client.get("/ttimeout/slow"))
+            await handler_started.wait()
+            assert captured["binding"] is not None
+            assert captured["binding"].tenant_context.tenant_id == "t-to"
+            await asyncio.sleep(0.2)
+            # After timeout, the binding should have been reset
+            assert captured["binding"].reset_done is True
+
+        asyncio.run(scenario())
+
+
+class TestRealCreateAppIntegration:
+    """Tests using the real create_app() entry point."""
+
+    def test_non_tenant_route_tenant_is_none(self):
+        """A non-tenant-required route must have request.tenant is None."""
+        from lingshu.app import create_app
+
+        app = create_app()
+        bp = Blueprint("rca-nt", url_prefix="/rca")
+
+        @bp.get("/check", name="check")
+        async def check_handler(request):
+            from lingshu.response import json_response
+            from lingshu.system.proxies import RequestProxy
+            proxy = RequestProxy()
+            return json_response({"tenant": proxy.tenant})
+
+        set_route_policy(check_handler, RoutePolicyDefinition(public=True))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        _, response = asyncio.run(app.asgi_client.get("/rca/check"))
+        assert response.status == 200
+        assert response.json["data"]["tenant"] is None
+
+    def test_create_app_tenant_middleware_installed(self):
+        """create_app() must install tenant middleware unconditionally."""
+        from lingshu.app import create_app
+
+        app = create_app()
+        assert getattr(app.ctx, "lingshu_tenant_middleware_installed", False) is True
+
+
+class TestPublicAPISmoke:
+    """Public API smoke tests."""
+
+    def test_tenant_public_api_is_accessible(self):
+        """Business code can use lingshu.tenant without importing lingshu.system."""
+        import lingshu.tenant
+
+        # All public exports must be non-None
+        for name in lingshu.tenant.__all__:
+            obj = getattr(lingshu.tenant, name, None)
+            assert obj is not None, f"{name} is missing from lingshu.tenant"
+
+    def test_tenant_public_api_exports(self):
+        import lingshu.tenant
+
+        assert hasattr(lingshu.tenant, "TenantContext")
+        assert hasattr(lingshu.tenant, "TenantResolverChain")
+        assert hasattr(lingshu.tenant, "ClaimTenantResolver")
+        assert hasattr(lingshu.tenant, "TenantResolver")
+
+
+class Test403Contract:
+    """403 response must preserve request_id/trace_id and leak nothing."""
+
+    def _make_app(self, name):
+        auth_chain = AuthenticatorChain()
+        auth_chain.register(StubAuthenticator("jwt", mode="success", subject="u"))
+        return _make_authed_tenant_app(name, auth_chain=auth_chain, tenant_chain=None)
+
+    def test_403_preserves_request_id(self):
+        app = self._make_app("tenant-rid")
+        custom_rid = "test-request-id-abc123"
+        _, response = asyncio.run(
+            app.asgi_client.get(
+                "/tenant-rid/tenant",
+                headers={"X-Request-ID": custom_rid},
+            )
+        )
+        assert response.status == 403
+        assert response.json["data"]["request_id"] == custom_rid
+
+    def test_403_preserves_trace_id(self):
+        app = self._make_app("tenant-tid")
+        custom_trace = "test-trace-id-xyz789"
+        _, response = asyncio.run(
+            app.asgi_client.get(
+                "/tenant-tid/tenant",
+                headers={"X-Trace-ID": custom_trace},
+            )
+        )
+        assert response.status == 403
+        assert response.json["data"]["trace_id"] == custom_trace
+
+    def test_403_no_claim_leakage(self):
+        """403 must not leak the raw claim value."""
+        from lingshu.system.auth.tenant.middleware import (
+            install_tenant_middleware,
+            set_tenant_resolver_chain,
+        )
+        from lingshu.system import sanic_adapter
+        from lingshu.system.auth.middleware import (
+            install_authentication_middleware,
+            set_authenticator_chain,
+        )
+
+        app = Sanic("tenant-leak-claim")
+        sanic_adapter.install_context_middleware(app)
+        bp = Blueprint("tlc-bp", url_prefix="/tlc")
+
+        @bp.get("/tenant", name="tenant")
+        async def t_handler(request):
+            from lingshu.response import json_response
+            return json_response({"ok": True})
+
+        set_route_policy(t_handler, RoutePolicyDefinition(tenant_required=True))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        auth_chain = AuthenticatorChain()
+        auth_chain.register(StubAuthenticator("jwt", mode="success", subject="u"))
+        set_authenticator_chain(app, auth_chain)
+
+        def evil_mode(request, principal):
+            return TenantResolutionOutcome.forbidden(
+                "evil",
+                "claim=super-secret-jwt-value-12345",
+            )
+
+        chain = TenantResolverChain()
+        chain.register(StubTenantResolver("evil", mode=evil_mode))
+        set_tenant_resolver_chain(app, chain)
+        install_authentication_middleware(app)
+        install_tenant_middleware(app)
+
+        _, response = asyncio.run(app.asgi_client.get("/tlc/tenant"))
+        assert response.status == 403
+        body = str(response.json)
+        assert "super-secret-jwt-value-12345" not in body
+        assert "claim=" not in body
+
+    def test_403_no_exception_leakage(self):
+        """403 must not leak validator exception messages."""
+        from lingshu.system.auth.tenant.middleware import (
+            install_tenant_middleware,
+            set_tenant_resolver_chain,
+        )
+        from lingshu.system import sanic_adapter
+        from lingshu.system.auth.middleware import (
+            install_authentication_middleware,
+            set_authenticator_chain,
+        )
+
+        app = Sanic("tenant-leak-exc")
+        sanic_adapter.install_context_middleware(app)
+        bp = Blueprint("tle-bp", url_prefix="/tle")
+
+        @bp.get("/tenant", name="tenant")
+        async def t_handler(request):
+            from lingshu.response import json_response
+            return json_response({"ok": True})
+
+        set_route_policy(t_handler, RoutePolicyDefinition(tenant_required=True))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        auth_chain = AuthenticatorChain()
+        auth_chain.register(StubAuthenticator("jwt", mode="success", subject="u"))
+        set_authenticator_chain(app, auth_chain)
+
+        chain = TenantResolverChain()
+        chain.register(
+            StubTenantResolver("boom", raise_exc=RuntimeError("db://user:pass@host:5432"))
+        )
+        set_tenant_resolver_chain(app, chain)
+        install_authentication_middleware(app)
+        install_tenant_middleware(app)
+
+        _, response = asyncio.run(app.asgi_client.get("/tle/tenant"))
+        assert response.status == 403
+        body = str(response.json)
+        assert "db://" not in body
+        assert "pass" not in body
+        assert "5432" not in body
+
+    def test_403_no_password_in_msg(self):
+        """403 response message must not contain password-like strings."""
+        app = self._make_app("tenant-pw")
+        _, response = asyncio.run(app.asgi_client.get("/tenant-pw/tenant"))
+        assert response.status == 403
+        msg = response.json.get("msg", "")
+        assert "password" not in msg.lower()
+        assert "secret" not in msg.lower()

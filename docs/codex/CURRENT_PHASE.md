@@ -37,9 +37,9 @@ request-level binding on top of the C2.1 authentication foundation.
 
 ## Test Results
 
-- `tests/test_c2_tenant.py`: N passed, 0 failed.
+- `tests/test_c2_tenant.py`: 111 passed, 0 failed.
 - `tests/test_c2_auth.py`: 111 passed, 0 failed.
-- Full suite: N passed, 0 failed (1 skipped: fresh-venv smoke).
+- Full suite: 430 passed, 0 failed (1 skipped: fresh-venv smoke).
 
 ## Scope Boundaries
 
