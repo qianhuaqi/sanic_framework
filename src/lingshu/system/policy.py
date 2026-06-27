@@ -14,7 +14,7 @@ class RoutePolicyError(ValueError):
     pass
 
 
-_ALLOWED_FIELDS = {"public", "auth_required", "maintenance_check", "timeout", "body_limit", "audit_level"}
+_ALLOWED_FIELDS = {"public", "auth_required", "maintenance_check", "timeout", "body_limit", "audit_level", "tenant_required"}
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,7 @@ class RoutePolicyDefinition:
     timeout: float | None = None
     body_limit: int | None = None
     audit_level: str | None = None
+    tenant_required: bool | None = None
 
     def __post_init__(self):
         if self.timeout is not None and self.timeout <= 0:
@@ -33,6 +34,10 @@ class RoutePolicyDefinition:
             raise RoutePolicyError("body_limit must be greater than zero")
         if self.public is True and self.auth_required is True:
             raise RoutePolicyError("public route cannot set auth_required=True")
+        if self.tenant_required is True and self.public is True:
+            raise RoutePolicyError("public route cannot require tenant")
+        if self.tenant_required is True and self.auth_required is False:
+            raise RoutePolicyError("tenant_required route must have auth_required=True or None")
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]):
@@ -44,10 +49,12 @@ class RoutePolicyDefinition:
     @classmethod
     def from_legacy(cls, policy):
         auth_required = bool(getattr(policy, "auth_required", True))
+        tenant_required = bool(getattr(policy, "tenant_required", False))
         return cls(
             public=not auth_required,
             auth_required=auth_required,
             maintenance_check=bool(getattr(policy, "maintenance_check", True)),
+            tenant_required=tenant_required,
         )
 
     def merge(self, override: "RoutePolicyDefinition | None") -> "RoutePolicyDefinition":
@@ -62,11 +69,17 @@ class RoutePolicyDefinition:
             timeout=self.timeout if override.timeout is None else override.timeout,
             body_limit=self.body_limit if override.body_limit is None else override.body_limit,
             audit_level=self.audit_level if override.audit_level is None else override.audit_level,
+            tenant_required=self.tenant_required if override.tenant_required is None else override.tenant_required,
         )
 
     def compile(self, route_name: str) -> "CompiledRoutePolicy":
         public = bool(self.public) if self.public is not None else False
         auth_required = bool(self.auth_required) if self.auth_required is not None else not public
+        tenant_required = bool(self.tenant_required) if self.tenant_required is not None else False
+        if tenant_required and public:
+            raise RoutePolicyError("public route cannot require tenant")
+        if tenant_required and not auth_required:
+            raise RoutePolicyError("tenant_required route must be authenticated")
         return CompiledRoutePolicy(
             route_name=route_name,
             public=public,
@@ -75,6 +88,7 @@ class RoutePolicyDefinition:
             timeout=10.0 if self.timeout is None else float(self.timeout),
             body_limit=self.body_limit,
             audit_level=self.audit_level or "none",
+            tenant_required=tenant_required,
         )
 
 
@@ -87,6 +101,7 @@ class CompiledRoutePolicy:
     timeout: float
     body_limit: int | None
     audit_level: str
+    tenant_required: bool = False
 
 
 class CompiledRoutePolicies:

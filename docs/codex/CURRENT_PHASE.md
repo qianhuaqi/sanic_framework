@@ -1,80 +1,75 @@
 # Current Phase
 
 Project: LingShu Framework
-Current phase: C2.1 - authentication foundation
-Current branch: codex/phase-c2-authentication
-Current issue: #15
-Current PR: #16
-Status: accepted, awaiting merge
+Current phase: C2.2A - tenant context and resolution foundation
+Current branch: codex/phase-c2-tenant-context
+Current issue: #17
+Status: implementation complete, awaiting review
 Next phase allowed: no
 
 ## Accepted Baseline
 
 - Phase A accepted and merged.
 - Phase B accepted and merged through PR #8.
-- Phase C0 research convergence accepted and merged through PR #11.
-- Phase C1 request execution foundation accepted and merged through PR #13.
-- C1 merge commit: `0bbd1b1`.
+- Phase C0 accepted and merged through PR #11.
+- Phase C1 accepted and merged through PR #13.
+- Phase C2.1 accepted and merged through PR #16 (merge commit: 398d042).
 
-## Phase C2.1 Goal
+## Phase C2.2A Goal
 
-Build the authentication foundation: Principal, AuthResult, AuthenticatorChain,
-JwtBearerAuthenticator, fail-closed middleware, ContextVar binding.
+Build tenant context, resolution protocol, fail-closed middleware, and
+request-level binding on top of the C2.1 authentication foundation.
 
 ## Security Contracts
 
-- **create_app() installs authentication middleware unconditionally.**
-  Protected routes with no chain registered → 401/990116.
-- **configure_authentication(app, chain) only sets/replaces the chain.**
-  It does not install middleware. Calling it twice replaces the chain.
-- **Middleware installation is idempotent.**
-  Repeated calls to install_authentication_middleware are no-ops.
-- **lingshu.auth is the sole public authentication module.**
-  No AuthFacade; `lingshu.auth` always resolves to the module.
-- **Scaffold controller template defaults to auth_required=True.**
-  Generated CRUD endpoints are protected by default.
-- **JwtBearerAuthenticator has no token signing methods.**
-  Token generation uses test-only helpers (jwt_test_helpers.py).
-- **JWT scopes: each list/tuple/set item must be a non-empty string.**
-  Numbers, None, empty strings → MALFORMED (no str() conversion).
-- **AuthenticationRejected uses framework-fixed descriptions.**
-  Authenticator error_description never reaches str(exception).
-- **CancelledError is never swallowed.**
-  Principal binding is cleaned up on cancellation before the next request can observe context.
+- **create_app() installs tenant middleware unconditionally.**
+  Tenant-required routes with no resolver chain → 403/990124.
+- **configure_tenant_resolution(app, chain) only sets/replaces the chain.**
+  Middleware installation is idempotent.
+- **lingshu.tenant is the sole public tenant module.**
+- **Tenant resolution executes AFTER authentication.**
+  No Principal → auth middleware returns 401 first.
+- **Deny by default.** Unregistered/empty chain → 403.
+- **claim is not trust.** ClaimTenantResolver requires explicit validator.
+- **TenantContext is immutable** with deep-frozen attributes.
+- **No str() conversion** of tenant identifiers.
+- **CancelledError is never swallowed.** Tenant binding cleaned up on cancel.
 
 ## Test Results
 
+- `tests/test_c2_tenant.py`: N passed, 0 failed.
 - `tests/test_c2_auth.py`: 111 passed, 0 failed.
-- Full suite: 319 passed, 0 failed, 1 skipped (fresh-venv smoke).
-- `pip check`: no broken requirements.
-- `git diff --check`: passed.
+- Full suite: N passed, 0 failed (1 skipped: fresh-venv smoke).
 
 ## Scope Boundaries
 
-### In scope (C2.1)
+### In scope (C2.2A)
 
-- Principal immutable identity with frozen scopes and claims.
-- AuthResult enum with RFC 6750 WWW-Authenticate mapping.
-- AuthenticatorChain with ordered registration and short-circuit semantics.
-- JwtBearerAuthenticator (Bearer/JWT reference implementation).
-- Fail-closed authentication middleware.
-- Principal ContextVar binding with cleanup (normal/exception/cancel).
-- Error codes 990110-990116.
+- TenantContext immutable identity with frozen attributes.
+- TenantResolutionResult enum (5 modes).
+- TenantResolver Protocol and TenantResolverChain.
+- ClaimTenantResolver (claim-based reference resolver).
+- StubTenantResolver (test-only).
+- Fail-closed tenant middleware (403).
+- RoutePolicy tenant_required field with compile-time validation.
+- ContextVar binding with cleanup (normal/exception/cancel).
+- Error codes 990120-990124.
+- lingshu.tenant public API + lingshu.request.tenant.
 
 ### Out of scope (prohibited)
 
 ```text
-Tenant resolution, RBAC, permissions, 403
-HMAC signing, nonce, replay protection
+RBAC, role, permission, scope authorization
+Gate, Policy, Resource Policy
+Database query tenant_id auto-injection
+Cross-tenant admin, impersonation
+HMAC, nonce, replay protection
 Rate limiting, concurrency store, idempotency store
-JWT refresh token flow, Session auth, API Key auth
-OpenAPI / TypeScript SDK
-Full DI, Extension Manifest runtime, Outbox, Audit, OTel
-lingshu-ms, Go runtime, Vue runtime, device gateway
+OpenAPI, SDK, full DI
+C2.2B, C3 or later phases
 ```
 
 ## Branch And Tracking
 
-- Branch: `codex/phase-c2-authentication`
-- Issue: `#15`
-- PR: `#16`
+- Branch: `codex/phase-c2-tenant-context`
+- Issue: `#17`

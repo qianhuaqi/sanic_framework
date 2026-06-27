@@ -8,6 +8,7 @@ class RoutePolicy:
     auth_required: bool = True
     signing_required: bool = False
     maintenance_check: bool = True
+    tenant_required: bool = False
 
 
 def set_blueprint_policy(blueprint, policy: RoutePolicy):
