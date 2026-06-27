@@ -1,11 +1,10 @@
 # Current Phase
 
 Project: LingShu Framework
-Current phase: C2.2A - tenant context and resolution foundation
-Current branch: codex/phase-c2-tenant-context
-Current issue: #17
-Current PR: #18
-Status: accepted, awaiting merge
+Current phase: C2-R0 - src architecture audit, boundary freeze, and migration plan
+Current branch: research/c2-src-convergence
+Current issue: #19
+Status: architecture audit complete, awaiting review
 Next phase allowed: no
 
 ## Accepted Baseline
@@ -15,68 +14,55 @@ Next phase allowed: no
 - Phase C0 accepted and merged through PR #11.
 - Phase C1 accepted and merged through PR #13.
 - Phase C2.1 accepted and merged through PR #16 (merge commit: `398d042`).
+- Phase C2.2A accepted and merged through PR #18 (merge commit: `2fc6e6b`).
 
-## Phase C2.2A Goal
+## Phase C2-R0 Goal
 
-Build tenant context, resolution protocol, fail-closed middleware, and
-request-level binding on top of the C2.1 authentication foundation.
+Architecture audit of the entire `src/lingshu` codebase: identify structural
+debt, overlapping modules, circular dependencies, and hot files. Define target
+layer boundaries and a phased migration roadmap (C2-RC, then C2-R1 through C2-R6).
 
-## Security Contracts
+This is a design-only phase — no production code changes.
 
-- **create_app() installs tenant middleware unconditionally.**
-  Tenant-required routes with no resolver chain → 403/990124.
-- **configure_tenant_resolution(app, chain) only sets/replaces the chain.**
-  Middleware installation is idempotent.
-- **lingshu.tenant is the sole public tenant module.**
-- **Tenant resolution executes after authentication.**
-  No Principal → authentication middleware returns 401 first.
-- **Deny by default.** Unregistered/empty resolver chain → 403.
-- **Claim is not trust.** ClaimTenantResolver requires an explicit validator.
-- **Only exact True succeeds.** False → FORBIDDEN; invalid validator results → INTERNAL_ERROR.
-- **Tenant identifiers are strict strings.** No implicit conversion, empty values, or surrounding whitespace.
-- **TenantContext is immutable** with deep-frozen attributes.
-- **Control-flow exceptions are not swallowed.** Cancellation and process-control exceptions propagate.
-- **Bindings are isolated and cleaned** on normal, exception, cancellation, and timeout paths.
+## Deliverables
 
-## Test Results
+- `docs/architecture/src-convergence-audit.md` — full module inventory, dependency
+  analysis, overlap matrix, hot files, technical-debt priority.
+- `docs/architecture/src-target-boundaries.md` — target directory structure,
+  layer dependency rules, app-scoped cleanup registry, auth/adapter separation,
+  no `public/` decision, tenant positioning.
+- `docs/architecture/src-migration-roadmap.md` — phased migration plan with
+  C2-RC prerequisite gate, API stability tiers, deprecation cycle, R1-R6.
+
+## Test Baseline
 
 - `tests/test_c2_tenant.py`: 127 passed, 0 failed.
 - `tests/test_c2_auth.py`: 111 passed, 0 failed.
-- Full suite: 446 passed, 0 failed, 1 skipped (optional fresh-venv smoke).
+- Full suite: 446 passed, 1 skipped, 0 failed.
 - `pip check`: no broken requirements.
-- `git diff --check`: passed.
+- No production code modifications.
 
 ## Scope Boundaries
 
-### In scope (C2.2A)
+### In scope (C2-R0)
 
-- TenantContext immutable identity with frozen attributes.
-- TenantResolutionResult enum and safe outcome carrier.
-- TenantResolver protocol and ordered TenantResolverChain.
-- ClaimTenantResolver with sync/async validator support.
-- StubTenantResolver for tests only.
-- Fail-closed tenant middleware and stable 403 error mapping.
-- RoutePolicy `tenant_required` field with compile-time validation.
-- ContextVar binding with normal/exception/cancel/timeout cleanup.
-- Error codes 990120-990124.
-- `lingshu.tenant` public API and `lingshu.request.tenant`.
+- Read-only analysis of `src/lingshu`.
+- Documentation: audit, boundaries, roadmap.
+- CURRENT_PHASE.md update.
 
 ### Out of scope (prohibited)
 
 ```text
-RBAC, role, permission, scope authorization
-Gate, Policy, Resource Policy
-Database query tenant_id auto-injection
-Cross-tenant admin, impersonation
-HMAC, nonce, replay protection
-Rate limiting, concurrency store, idempotency store
-OpenAPI, SDK, full DI
-C2.2B, C3 or later phases
+Moving directories
+Deleting code
+Modifying imports
+Modifying public API
+Starting C2-RC implementation
+Starting C2-R1 through C2-R6 implementation
+Starting C2.2B or C3
 ```
 
 ## Branch And Tracking
 
-- Branch: `codex/phase-c2-tenant-context`
-- Issue: `#17`
-- PR: `#18`
-- Accepted implementation commit: `5418f0b7b0cbe85223fa87aac3d46fae0594e7fd`
+- Branch: `research/c2-src-convergence`
+- Issue: `#19`

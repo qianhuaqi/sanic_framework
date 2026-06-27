@@ -209,9 +209,9 @@ def test_current_phase_and_handoff_docs_exist_with_current_context():
     current_phase = _read("docs/codex/CURRENT_PHASE.md")
     handoff = _read("docs/codex/HANDOFF.md")
 
-    assert "Current phase: C2.2A" in current_phase
-    assert "Current branch: codex/phase-c2-tenant-context" in current_phase
-    assert "Current issue: #17" in current_phase
+    assert "Current phase: C2-R0" in current_phase
+    assert "Current branch: research/c2-src-convergence" in current_phase
+    assert "Current issue: #19" in current_phase
     assert "Next phase allowed: no" in current_phase
     assert "Branch:" in handoff
     assert "Work commit:" in handoff
