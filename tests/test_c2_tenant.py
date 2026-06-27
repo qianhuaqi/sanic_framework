@@ -538,6 +538,105 @@ class TestClaimTenantResolver:
                 resolver_id=123,  # type: ignore[arg-type]
             )
 
+    # --- Constructor-time validation (Item 5) ---
+
+    def test_constructor_validator_not_callable_raises_typeerror(self):
+        with pytest.raises(TypeError, match="callable"):
+            ClaimTenantResolver(claim_name="tid", validator=42)  # type: ignore[arg-type]
+
+    def test_constructor_validator_none_raises(self):
+        with pytest.raises((TypeError, ValueError)):
+            ClaimTenantResolver(claim_name="tid", validator=None)  # type: ignore[arg-type]
+
+    def test_constructor_claim_name_whitespace_only_rejected(self):
+        with pytest.raises(ValueError, match="claim_name"):
+            ClaimTenantResolver(
+                claim_name="   ",
+                validator=lambda t, p: True,
+            )
+
+    def test_constructor_claim_name_leading_space_rejected(self):
+        with pytest.raises(ValueError, match="claim_name"):
+            ClaimTenantResolver(
+                claim_name=" tid",
+                validator=lambda t, p: True,
+            )
+
+    def test_constructor_claim_name_trailing_space_rejected(self):
+        with pytest.raises(ValueError, match="claim_name"):
+            ClaimTenantResolver(
+                claim_name="tid ",
+                validator=lambda t, p: True,
+            )
+
+    def test_constructor_claim_name_non_string_rejected(self):
+        with pytest.raises(ValueError):
+            ClaimTenantResolver(claim_name=123, validator=lambda t, p: True)  # type: ignore[arg-type]
+
+    # --- Exception propagation (Item 4) ---
+
+    def test_system_exit_propagates(self):
+        """SystemExit must propagate, never be swallowed as INTERNAL_ERROR."""
+        def validator(tid, principal):
+            raise SystemExit(1)
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        with pytest.raises(SystemExit):
+            _run(resolver.resolve(None, principal))
+
+    def test_generator_exit_propagates(self):
+        """GeneratorExit must propagate, never be swallowed."""
+        def validator(tid, principal):
+            raise GeneratorExit()
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        with pytest.raises(GeneratorExit):
+            _run(resolver.resolve(None, principal))
+
+    def test_sync_cancelled_error_propagates(self):
+        """asyncio.CancelledError (sync raise) must propagate."""
+        def validator(tid, principal):
+            raise asyncio.CancelledError()
+        resolver = ClaimTenantResolver(claim_name="tid", validator=validator)
+        principal = self._make_principal({"tid": "acme"})
+        with pytest.raises(asyncio.CancelledError):
+            _run(resolver.resolve(None, principal))
+
+    # --- Whitespace claim strictness (Item 3) ---
+
+    def test_whitespace_only_claim_returns_malformed(self):
+        resolver = ClaimTenantResolver(claim_name="tid", validator=lambda t, p: True)
+        principal = self._make_principal({"tid": "   "})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.MALFORMED
+
+    def test_leading_space_claim_returns_malformed(self):
+        resolver = ClaimTenantResolver(claim_name="tid", validator=lambda t, p: True)
+        principal = self._make_principal({"tid": " acme"})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.MALFORMED
+
+    def test_trailing_space_claim_returns_malformed(self):
+        resolver = ClaimTenantResolver(claim_name="tid", validator=lambda t, p: True)
+        principal = self._make_principal({"tid": "acme "})
+        outcome = _run(resolver.resolve(None, principal))
+        assert outcome.result is TenantResolutionResult.MALFORMED
+
+    def test_malformed_whitespace_skips_validator(self):
+        """When claim has whitespace issues, validator must not be called."""
+        call_count = {"n": 0}
+
+        def counting_validator(tid, principal):
+            call_count["n"] += 1
+            return True
+
+        resolver = ClaimTenantResolver(claim_name="tid", validator=counting_validator)
+        for bad in ("", "   ", " acme", "acme "):
+            principal = self._make_principal({"tid": bad})
+            outcome = _run(resolver.resolve(None, principal))
+            assert outcome.result is TenantResolutionResult.MALFORMED, f"Failed for {bad!r}"
+        assert call_count["n"] == 0
+
 
 # ---------------------------------------------------------------------------
 # 5. StubTenantResolver
@@ -1004,7 +1103,7 @@ class TestCreateAppTenantIntegration:
 # ---------------------------------------------------------------------------
 
 class TestTimeoutCleanup:
-    """Timeout path must clean up tenant binding."""
+    """Timeout path must clean up tenant binding — deterministic wait."""
 
     def test_tenant_binding_cleanup_on_timeout(self):
         from lingshu.system import sanic_adapter
@@ -1017,19 +1116,19 @@ class TestTimeoutCleanup:
             set_tenant_resolver_chain,
         )
 
-        app = Sanic("tenant-timeout")
+        app = Sanic("tenant-timeout-deterministic")
         sanic_adapter.install_context_middleware(app)
-        bp = Blueprint("tenant-timeout-bp", url_prefix="/ttimeout")
+        bp = Blueprint("tenant-timeout-det-bp", url_prefix="/ttd")
 
         handler_started = asyncio.Event()
         captured = {}
 
         @bp.get("/slow", name="slow")
         async def slow_handler(request):
-            from lingshu.response import json_response
             captured["binding"] = request.ctx.lingshu_tenant_binding
             handler_started.set()
             await asyncio.sleep(30)
+            from lingshu.response import json_response
             return json_response({"ok": True})
 
         set_route_policy(slow_handler, RoutePolicyDefinition(tenant_required=True, timeout=0.05))
@@ -1048,13 +1147,28 @@ class TestTimeoutCleanup:
         install_tenant_middleware(app)
 
         async def scenario():
-            task = asyncio.ensure_future(app.asgi_client.get("/ttimeout/slow"))
+            task = asyncio.ensure_future(app.asgi_client.get("/ttd/slow"))
             await handler_started.wait()
-            assert captured["binding"] is not None
-            assert captured["binding"].tenant_context.tenant_id == "t-to"
-            await asyncio.sleep(0.2)
-            # After timeout, the binding should have been reset
-            assert captured["binding"].reset_done is True
+
+            binding = captured["binding"]
+            assert binding is not None
+            assert binding.tenant_context.tenant_id == "t-to"
+
+            # Deterministically await the full request task to completion.
+            _, response = await task
+
+            # HTTP 504 with error code 990002.
+            assert response.status == 504
+            assert response.json["code"] == 990002
+
+            # Tenant binding was cleaned up.
+            assert binding.reset_done is True
+            assert current_tenant.get() is None
+
+            # Follow-up request must NOT see the previous tenant context.
+            _, resp2 = await app.asgi_client.get("/ttd/slow")
+            assert resp2.status == 504
+            assert current_tenant.get() is None
 
         asyncio.run(scenario())
 
@@ -1244,3 +1358,166 @@ class Test403Contract:
         msg = response.json.get("msg", "")
         assert "password" not in msg.lower()
         assert "secret" not in msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# 16. Real create_app + public API end-to-end
+# ---------------------------------------------------------------------------
+
+class TestPublicAPIEndToEnd:
+    """End-to-end tests using ONLY the public API surface.
+
+    Handler code uses ``from lingshu import request`` — never imports
+    ``lingshu.system.*`` directly.
+    """
+
+    def test_scenario1_authed_no_tenant_chain_returns_990124(self):
+        """Scenario 1: auth configured, tenant_required=True, no chain → 990124."""
+        from lingshu.app import create_app
+        from lingshu.auth import (
+            AuthenticatorChain,
+            JwtBearerAuthenticator,
+            configure_authentication,
+        )
+
+        app = create_app()
+        bp = Blueprint("e2e-s1", url_prefix="/e2e1")
+
+        @bp.get("/tenant", name="tenant")
+        async def tenant_handler(request):
+            from lingshu import request
+            from lingshu.response import json_response
+            return json_response({"tenant_id": request.tenant.tenant_id if request.tenant else None})
+
+        set_route_policy(tenant_handler, RoutePolicyDefinition(tenant_required=True))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        chain = AuthenticatorChain()
+        chain.register(
+            JwtBearerAuthenticator(secret=_TEST_SECRET, algorithms=["HS256"])
+        )
+        configure_authentication(app, chain)
+
+        from lingshu.system.auth.jwt_test_helpers import encode_jwt_token
+        token = encode_jwt_token(_TEST_SECRET, "HS256", subject="user-1")
+        _, response = asyncio.run(
+            app.asgi_client.get(
+                "/e2e1/tenant",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        )
+        assert response.status == 403
+        assert response.json["code"] == 990124
+
+    def test_scenario2_authed_with_claim_resolver_success(self):
+        """Scenario 2: full end-to-end via public API.
+
+        Handler uses ONLY:
+            from lingshu import request
+            request.principal
+            request.tenant
+        """
+        from lingshu.app import create_app
+        from lingshu.auth import (
+            AuthenticatorChain,
+            JwtBearerAuthenticator,
+            configure_authentication,
+        )
+        from lingshu.tenant import (
+            ClaimTenantResolver,
+            TenantResolverChain,
+            configure_tenant_resolution,
+        )
+
+        app = create_app()
+        bp = Blueprint("e2e-s2", url_prefix="/e2e2")
+
+        @bp.get("/me", name="me")
+        async def me_handler(request):
+            from lingshu import request
+            from lingshu.response import json_response
+            return json_response({
+                "subject": request.principal.subject,
+                "tenant_id": request.tenant.tenant_id if request.tenant else None,
+            })
+
+        set_route_policy(me_handler, RoutePolicyDefinition(tenant_required=True))
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        auth_chain = AuthenticatorChain()
+        auth_chain.register(
+            JwtBearerAuthenticator(secret=_TEST_SECRET, algorithms=["HS256"])
+        )
+        configure_authentication(app, auth_chain)
+
+        valid_tenants = {"acme-corp", "globex"}
+
+        tenant_chain = TenantResolverChain()
+        tenant_chain.register(
+            ClaimTenantResolver(
+                claim_name="tenant_id",
+                validator=lambda tid, p: tid in valid_tenants,
+            )
+        )
+        configure_tenant_resolution(app, tenant_chain)
+
+        from lingshu.system.auth.jwt_test_helpers import encode_jwt_token
+        token = encode_jwt_token(
+            _TEST_SECRET, "HS256",
+            subject="user-1",
+            extra_claims={"tenant_id": "acme-corp"},
+        )
+        _, response = asyncio.run(
+            app.asgi_client.get(
+                "/e2e2/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        )
+        assert response.status == 200
+        assert response.json["data"]["subject"] == "user-1"
+        assert response.json["data"]["tenant_id"] == "acme-corp"
+
+    def test_scenario3_non_tenant_route_tenant_is_none(self):
+        """Scenario 3: non-tenant_required route — request.tenant is None."""
+        from lingshu.app import create_app
+        from lingshu.auth import (
+            AuthenticatorChain,
+            JwtBearerAuthenticator,
+            configure_authentication,
+        )
+
+        app = create_app()
+        bp = Blueprint("e2e-s3", url_prefix="/e2e3")
+
+        @bp.get("/me", name="me")
+        async def me_handler(request):
+            from lingshu import request
+            from lingshu.response import json_response
+            return json_response({
+                "subject": request.principal.subject,
+                "tenant": request.tenant,
+            })
+
+        set_route_policy(me_handler, RoutePolicyDefinition())
+        app.blueprint(bp)
+        compile_route_policies(app)
+
+        auth_chain = AuthenticatorChain()
+        auth_chain.register(
+            JwtBearerAuthenticator(secret=_TEST_SECRET, algorithms=["HS256"])
+        )
+        configure_authentication(app, auth_chain)
+
+        from lingshu.system.auth.jwt_test_helpers import encode_jwt_token
+        token = encode_jwt_token(_TEST_SECRET, "HS256", subject="user-1")
+        _, response = asyncio.run(
+            app.asgi_client.get(
+                "/e2e3/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        )
+        assert response.status == 200
+        assert response.json["data"]["subject"] == "user-1"
+        assert response.json["data"]["tenant"] is None

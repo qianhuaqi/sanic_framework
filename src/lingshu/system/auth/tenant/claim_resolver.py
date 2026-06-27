@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import inspect
-from typing import Any, Awaitable, Callable, Union
+from typing import Awaitable, Callable, Union
 
 from lingshu.system.auth.principal import Principal
 from lingshu.system.auth.tenant.context import TenantContext
@@ -23,14 +22,18 @@ class ClaimTenantResolver:
     it through an explicit validator/membership checker.
 
     Security properties:
-    - The claim name must be explicitly configured.
+    - The claim name must be explicitly configured (non-empty str, no padding).
     - The claim value must originally be a non-empty string (no str() conversion).
     - A claim existing does NOT mean it is trusted — the validator must pass.
+    - **Whitespace rejection:** empty / whitespace-only / leading-space /
+      trailing-space claim values → MALFORMED.  The value is never silently
+      stripped before validation.
     - **Fail-closed:** only a return value *exactly* ``True`` means success.
       ``False`` → FORBIDDEN.  Any other return (None, int, str, object) or
-      an exception → INTERNAL_ERROR.
+      a plain ``Exception`` → INTERNAL_ERROR.
+    - ``asyncio.CancelledError``, ``SystemExit``, ``KeyboardInterrupt``,
+      ``GeneratorExit`` always propagate (never swallowed).
     - Claim present but value ``None`` → MALFORMED (short-circuit, not MISSING).
-    - ``asyncio.CancelledError`` is always re-raised (never swallowed).
     - No database, network, or external identity service dependency.
     """
 
@@ -45,8 +48,14 @@ class ClaimTenantResolver:
     ):
         if not isinstance(claim_name, str) or not claim_name:
             raise ValueError("ClaimTenantResolver requires a non-empty claim_name")
-        if validator is None:
-            raise ValueError("ClaimTenantResolver requires an explicit validator")
+        if claim_name != claim_name.strip():
+            raise ValueError(
+                "ClaimTenantResolver claim_name must not have leading or trailing whitespace"
+            )
+        if not callable(validator):
+            raise TypeError(
+                f"ClaimTenantResolver validator must be callable, got {type(validator).__name__}"
+            )
         if not isinstance(resolver_id, str) or not resolver_id:
             raise ValueError("ClaimTenantResolver requires a non-empty resolver_id")
         if resolver_id != resolver_id.strip():
@@ -78,19 +87,30 @@ class ClaimTenantResolver:
                 "Tenant claim is not a string",
             )
 
-        if not raw_value.strip():
+        # Whitespace checks — never silently strip.
+        if not raw_value:
             return TenantResolutionOutcome.malformed(
                 self.resolver_id,
                 "Tenant claim is an empty string",
+            )
+        if not raw_value.strip():
+            return TenantResolutionOutcome.malformed(
+                self.resolver_id,
+                "Tenant claim is whitespace-only",
+            )
+        if raw_value != raw_value.strip():
+            return TenantResolutionOutcome.malformed(
+                self.resolver_id,
+                "Tenant claim has leading or trailing whitespace",
             )
 
         try:
             result = self._validator(raw_value, principal)
             if inspect.isawaitable(result):
                 result = await result
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            raise
-        except BaseException as exc:  # noqa: BLE001 — fail-closed: never leak
+        except Exception as exc:  # noqa: BLE001 — fail-closed: never leak
+            # CancelledError / SystemExit / KeyboardInterrupt / GeneratorExit
+            # are *not* Exception subclasses and will propagate automatically.
             return TenantResolutionOutcome.internal_error(
                 self.resolver_id,
                 error=exc,
