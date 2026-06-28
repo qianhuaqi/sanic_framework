@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -104,10 +105,14 @@ class Response:
         return Headers(self._headers)
 
     @property
-    def body(self) -> bytes:
+    def body(self) -> builtins.bytes:
         return self._body
 
-    def set_header(self, name: str | bytes, value: str | bytes) -> None:
+    def set_header(
+        self,
+        name: str | builtins.bytes,
+        value: str | builtins.bytes,
+    ) -> None:
         """Replace all fields with ``name`` before commit."""
 
         self._ensure_mutable()
@@ -118,7 +123,11 @@ class Response:
         if normalized_name == "content-length":
             self._auto_content_length = False
 
-    def add_header(self, name: str | bytes, value: str | bytes) -> None:
+    def add_header(
+        self,
+        name: str | builtins.bytes,
+        value: str | builtins.bytes,
+    ) -> None:
         """Append a duplicate-preserving field before commit."""
 
         self._ensure_mutable()
@@ -127,7 +136,7 @@ class Response:
         if item[0] == "content-length":
             self._auto_content_length = False
 
-    def write(self, value: bytes | bytearray | memoryview) -> None:
+    def write(self, value: builtins.bytes | bytearray | memoryview) -> None:
         """Append buffered bytes before commit.
 
         This is not the deferred public streaming-response API.
