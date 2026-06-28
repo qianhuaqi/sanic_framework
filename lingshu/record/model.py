@@ -257,10 +257,11 @@ class RuntimeRecord:
         if duration_ns is not None and duration_ns < 0:
             raise ValueError("duration_ns must be non-negative")
         if self.event_count >= self.budgets.max_events_per_record:
-            return self._drop_or_raise(
+            self._drop_or_raise(
                 "record.event_limit_exceeded",
                 "The Runtime Record event limit was exceeded.",
             )
+            return None
 
         sanitized, truncated = sanitize_attributes(
             attributes or {},
@@ -297,15 +298,17 @@ class RuntimeRecord:
         )
         payload = event.to_json_line()
         if len(payload) > self.budgets.max_event_bytes:
-            return self._drop_or_raise(
+            self._drop_or_raise(
                 "record.event_too_large",
                 "A Runtime Record event exceeds its configured limit.",
             )
+            return None
         if self.record_bytes + len(payload) > self.budgets.max_record_bytes:
-            return self._drop_or_raise(
+            self._drop_or_raise(
                 "record.record_too_large",
                 "The Runtime Record exceeds its configured limit.",
             )
+            return None
         if not self.reservation.submit(payload, self.policy):
             self.incomplete = True
             self.dropped_events += 1
@@ -334,7 +337,10 @@ class RuntimeRecord:
 class QueueReservationProtocol(Protocol):
     """Structural reservation surface consumed by RuntimeRecord."""
 
-    available: bool
+    @property
+    def available(self) -> bool:
+        """Return whether reserved capacity remains available."""
+        ...
 
     def submit(self, payload: bytes, policy: RecordPolicy) -> bool:
         """Submit a complete event line under the record policy."""
