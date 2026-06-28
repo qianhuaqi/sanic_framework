@@ -17,7 +17,7 @@ COMPONENTS = (
     "lingshu.server",
     "lingshu.testing",
 )
-PROVIDER_COMPONENTS = {"lingshu.cli", "lingshu.core", "lingshu.runtime"}
+PROVIDER_COMPONENTS = {"lingshu.cli", "lingshu.core", "lingshu.record", "lingshu.runtime"}
 
 
 def test_root_layout_has_no_src_directory() -> None:
