@@ -3,62 +3,80 @@
 Updated at: 2026-06-28
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Phase: P0-D2 - Runtime Concurrency, Task Ownership, and Graceful Shutdown
 Parent Issue: #25
-Active decision Issue: none
-Active decision branch: none
+Active decision Issue: #34
+Active decision branch: `human/dodo/phase-p0-d2-runtime-concurrency`
 Baseline: latest accepted `main`
-Status: P0-D1 completed; awaiting next architecture decision
+Status: proposed architecture ready for review
 
-## Completed decision
+## Previous accepted decision
 
 ### P0-D1: Single repository and concurrency governance
 
-- Decision Issue: #31 — completed.
-- Pull Request: #32 — merged.
-- Merge commit: `92d6c0795fd5a6d21841a8ac3a1896d703809e40`.
-- ADR-001: accepted.
+- Issue #31 completed.
+- PR #32 merged.
+- ADR-001 accepted.
 
-Confirmed:
+## P0-D2 proposal completed on this branch
 
-- LingShu uses one canonical repository: `qianhuaqi/lingshu`.
-- Core, official capabilities, tests, documentation, tooling, and release metadata remain under one repository unless a future ADR proves otherwise.
-- Concurrent developers use separate Issues, writer-prefixed branches, worktrees or clones, virtual environments, and Pull Requests.
-- One branch has one primary writer.
-- Every concurrent task declares base commit, write scope, dependencies, conflicts, integration order, and required checks.
-- Independent tasks may run in parallel.
-- Overlapping paths, duplicate public contracts, and cross-cutting files are serialized.
-- Shared contracts and foundations merge before dependent work.
-- Development may be parallel; integration into `main` is serial and controlled by the project lead.
-- Runtime concurrency safety invariants are confirmed, while its concrete implementation remains unresolved.
+- Added `ADR-002-runtime-concurrency-model.md` with Proposed status.
+- Added `RUNTIME_CONCURRENCY_MODEL.md` with the detailed implementable model.
+- Defined standard-library asyncio semantics as the correctness baseline.
+- Defined one event loop and one application runtime per Worker process.
+- Defined Supervisor, Worker, Application, Connection, Request, and Operation ownership Scopes.
+- Prohibited unregistered fire-and-forget tasks.
+- Defined request-owned and application-owned background tasks.
+- Defined one active request per HTTP/1.1 connection, with concurrency across connections.
+- Defined hierarchical bounded admission control and bounded waiters.
+- Defined transport, body, route, executor, dependency, telemetry, and Runtime Record backpressure.
+- Defined absolute monotonic Deadline propagation.
+- Defined cancellation reason taxonomy and parent-to-child propagation.
+- Defined bounded thread and process executor isolation.
+- Defined Worker crash restart budget and crash-loop stop.
+- Defined runtime and shutdown state machines.
+- Defined observability fields and concurrency/leak test matrix.
 
-## Active governance documents
+## Proposal summary
 
-- `docs/decisions/ADR-001-single-repository-and-concurrent-development.md`
-- `docs/development/CONCURRENT_DEVELOPMENT.md`
-- `docs/development/DEVELOPMENT_CONSTITUTION.md`
-- `AGENTS.md`
-- `docs/architecture/P0_DECISION_STATUS.md`
-- `docs/architecture/LINGSHU_FRAMEWORK_BLUEPRINT.md`
+```text
+Supervisor
+└─ Worker process
+   └─ one event loop
+      └─ Application Runtime
+         ├─ application-owned tasks
+         └─ Connection
+            └─ Request
+               └─ Operation children
+```
 
-## Still unresolved
+All task, queue, connection, request, executor, telemetry, and record resources are bounded.
 
-- one Python distribution versus multiple distributions in the single repository;
-- `packages/` versus another repository layout;
-- direct `lingshu/` versus a `src/` layout;
-- exact Core, HTTP, Server, Record, CLI, testing, and extension boundaries;
-- event-loop, worker, process, thread, Task Group, admission-control, cancellation, and shutdown models;
-- built-in versus separately installable capabilities;
-- supported Python and platforms;
-- release and compatibility policy;
-- license and public governance files.
+## Intentionally deferred
+
+- minimum Python version;
+- public Scope, Deadline, limiter, and cancellation API names;
+- exact numeric defaults;
+- listener socket distribution strategy;
+- mandatory optional accelerator support;
+- HTTP/2 and HTTP/3 multiplexing;
+- distribution count and physical source layout.
 
 ## Verification
 
-The accepted P0-D1 change contains architecture and governance documentation only. No production source, package skeleton, runtime dependency, framework implementation, or publishing configuration was introduced.
+This branch changes architecture and governance documentation only. It adds no production source, package skeleton, runtime dependency, framework implementation, or publishing configuration.
 
-P1 remains blocked.
+Review must verify:
+
+- no orphan-task path exists;
+- no queue or waiter is implicitly unbounded;
+- Deadline is absolute and monotonic;
+- cancellation cannot be silently swallowed;
+- shutdown is ordered and bounded;
+- HTTP/1.1 same-connection requests are not executed concurrently;
+- multi-Worker semantics do not depend on shared mutable Python state;
+- all deferred choices remain explicitly unresolved.
 
 ## Next action
 
-Select and document the next P0 architecture decision under Issue #25. Do not start production implementation.
+Review the P0-D2 proposal and merge only if the runtime concurrency semantics are accepted. Do not start production implementation or P1.
