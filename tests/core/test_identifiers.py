@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from lingshu.core import (
     ConnectionId,
     FatalScope,
