@@ -3,39 +3,35 @@
 Updated at: 2026-06-28
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Phase: P0-D4 - Application Kernel, Request Pipeline, and Minimum Public API
+Phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Parent Issue: #25
-Active decision Issue: #40
-Active decision branch: `human/dodo/phase-p0-d4-application-kernel`
+Active decision Issue: none
+Active decision branch: none
 Baseline: latest accepted `main`
-Status: proposed architecture ready for review
+Status: P0-D4 accepted; awaiting P0-D5
 
 ## Accepted decisions
 
-- P0-D1: single repository and development concurrency through ADR-001 / PR #32.
+- P0-D1: repository and development concurrency through ADR-001 / PR #32.
 - P0-D2: runtime concurrency through ADR-002 / PR #35.
 - P0-D3: package and component layout through ADR-003 / PR #38.
+- P0-D4: Application Kernel and request pipeline through ADR-004 / PR #41.
 
-## P0-D4 proposal completed on this branch
+P0-D4 merge commit:
 
-- Added `ADR-004-application-kernel-request-pipeline-and-public-api.md`.
-- Added `APPLICATION_KERNEL_AND_REQUEST_PIPELINE.md`.
-- Defined public `LingShu` composition root and private low-level Application Kernel.
-- Defined Application states and legal mutation windows.
-- Defined immutable Application Revision and atomic freeze publication.
-- Defined route declaration, conflict validation, and immutable compiled Router.
-- Defined asynchronous handler contract with explicit Request input.
-- Defined deterministic application and route Middleware onion ordering.
-- Defined the exact twenty-stage request pipeline.
-- Defined immutable Request metadata, scoped state, and bounded single-consumer body.
-- Defined one-time handler return normalization and rejected tuple/None magic.
-- Defined Response state and commit semantics.
-- Defined exception mapper resolution before and after commit.
-- Defined extension contribution, startup, request-time, and reverse-shutdown boundaries.
-- Proposed minimum root exports: `LingShu`, `Request`, `Response`, `HTTPException`.
-- Defined state-machine, contract, leak, ordering, commit, and import-side-effect tests.
+```text
+bb78918dc2bc92dd49c34258e3707abd37274f12
+```
 
-## Proposed application lifecycle
+## Confirmed Application model
+
+```text
+Public LingShu facade
+└─ private Application Kernel
+   └─ immutable Application Plan
+```
+
+Lifecycle:
 
 ```text
 CREATED
@@ -48,32 +44,50 @@ CREATED
 → STOPPED
 ```
 
-No route, Middleware, Extension, exception mapper, or configuration registry mutation is allowed after freeze.
+Registration is allowed only before freeze. Freeze validates the full revision and atomically publishes an immutable plan. Freeze failure publishes no partial state. Running plan mutation is prohibited.
 
-## Proposed request path
+## Confirmed request path
 
 ```text
 protocol acceptance
-→ Request Scope / Deadline
-→ identities / Runtime Record
-→ Request construction
+→ Request Scope and absolute Deadline
+→ identities and Runtime Record
+→ immutable Request and bounded body stream
 → application admission
 → application Middleware
 → route match
-→ route admission
+→ route admission/capabilities
 → route Middleware
-→ async Handler
-→ Response normalization
-→ Middleware unwind
-→ exception fallback
-→ Response prepare
-→ commit
-→ body write/stream
-→ record finalization
-→ Scope cleanup
+→ asynchronous Handler
+→ one-time Response normalization
+→ Middleware reverse unwind
+→ exception fallback when needed
+→ Response preparation
+→ response-head commit
+→ body/stream transmission with backpressure
+→ Runtime Record finalization
+→ request-owned task cleanup
+→ resource/context release
 ```
 
-## Proposed public facade
+## Confirmed contracts
+
+- Handler receives one explicit Request and is asynchronous initially.
+- Application and route Middleware use deterministic onion ordering.
+- `call_next` is single-use and Scope-bound.
+- Request metadata is immutable.
+- Request state is Scope-local.
+- Request body is bounded, backpressured, and single-consumer.
+- `Response`, `str`, and bytes-like values are initial supported Handler results.
+- `None`, tuple magic, arbitrary iterators, and unknown values are rejected by default.
+- Response state is `NEW → PREPARED → COMMITTED → COMPLETED/ABORTED`.
+- Status and headers are immutable after commit.
+- No second response can replace a committed response.
+- Exception mapping order is route, application, `HTTPException`, then safe default before commit.
+- Extensions contribute during configuration and are compiled at freeze.
+- Extensions cannot mutate registries while running.
+
+## Confirmed minimum public facade
 
 ```python
 from lingshu import LingShu, Request, Response, HTTPException
@@ -91,36 +105,33 @@ async def index(request: Request) -> Response:
 
 ## Intentionally deferred
 
-- configuration hot reload and multi-Worker rollout;
+- configuration reload and multi-Worker plan rollout;
 - full exception taxonomy and error body schema;
 - identifier formats;
-- JSON/form/multipart/upload APIs;
-- automatic `HEAD` and `OPTIONS`;
-- host routing, reverse routing, mounts, and sub-applications;
-- server `run`/`serve` and CLI semantics;
-- sync handler adaptation;
+- JSON and other serialization rules;
+- cookies, forms, multipart, uploads, and content negotiation;
+- automatic HEAD/OPTIONS;
+- host routing, reverse routing, mounting, and sub-applications;
+- public run/serve and CLI behavior;
+- sync Handler adaptation;
 - dependency injection;
-- OpenAPI and official integrations;
-- exact numeric defaults;
+- OpenAPI and official capabilities;
+- exact media types, limits, and timeouts;
 - Python/platform support and build backend.
+
+## Next decision
+
+P0-D5 should consolidate:
+
+- identifier standards and correlation;
+- exception taxonomy and safe client errors;
+- configuration source/precedence/validation/version/reload/rollback rules;
+- serialization and content negotiation baseline;
+- Runtime Record envelope, storage budgets, retention, disk safety, and recovery;
+- common telemetry fields.
 
 ## Verification
 
-This branch contains architecture and governance documentation only. It adds no production source, package skeleton, dependency, or publishing configuration.
+P0-D4 added architecture and governance documentation only. No production source, package skeleton, dependency, or publishing configuration was created.
 
-Review must verify:
-
-- lower Core does not depend on Server through the public facade;
-- failed freeze cannot publish a partial plan;
-- running plan mutation is impossible;
-- Middleware order is deterministic;
-- Request body and state remain Scope-owned;
-- Response cannot be replaced after commit;
-- cancellation is not converted into an ordinary error response;
-- extensions cannot mutate registries during request handling;
-- the public root export surface remains minimal;
-- P1 remains blocked.
-
-## Next action
-
-Review and merge the P0-D4 decision Pull Request only if the Kernel and request-pipeline contract is accepted. Do not start production implementation.
+P1 remains blocked.
