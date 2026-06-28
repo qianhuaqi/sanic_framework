@@ -1,14 +1,16 @@
-# LingShu Framework 总体架构设计总纲（P0-RC6）
+# LingShu Framework 总体架构设计总纲（P0-RC7）
 
 - 设计负责人：小顾
 - 产品决策人：多多
 - 状态：P0 候选总纲，尚未最终冻结
 - GitHub Issue：#25
+- 当前决策 Issue：#46
 - 规范仓库：`qianhuaqi/lingshu`
 - 已接受决策：ADR-001、ADR-002、ADR-003、ADR-004、ADR-005
+- 当前提案：ADR-006
 - 决策状态：`docs/architecture/P0_DECISION_STATUS.md`
 
-> 本文件是 LingShu 当前唯一总体架构入口。详细执行合同位于已接受 ADR 和对应架构文档。P0 完成前不得创建生产源码、包骨架、运行时依赖或发布配置。
+> 本文件是 LingShu 唯一总体架构入口。只有 Confirmed 内容可以成为实施依据。P0-D6 当前仍是 Proposed；在决策 PR 合并前不得创建生产源码、`pyproject.toml`、CI Workflow 或运行依赖。
 
 ## 1. 项目定位
 
@@ -16,15 +18,7 @@ LingShu 是从零开发、独立实现、自主控制的 Python Web/API Framewor
 
 LingShu 不是 Sanic、FastAPI、Flask、Django、Starlette 或其他上层 Web Framework 的包装、适配层或迁移版本，也不承担旧实现兼容义务。
 
-LingShu 自己定义和控制：
-
-- Application Kernel；
-- HTTP Runtime 与 Native Server；
-- Request、Response、Router、Middleware 与 Streaming；
-- 生命周期、并发、取消、清理、容量与背压；
-- Extension Protocol；
-- Request ID 与 Runtime Record；
-- CLI、测试支持和后续生态。
+LingShu 自己定义和控制 Application Kernel、HTTP Runtime、Native Server、Request/Response/Router/Middleware/Streaming、并发/取消/背压/清理、Extension Protocol、Runtime Record、CLI 和测试支持。
 
 旧实现只保留在：
 
@@ -32,7 +26,7 @@ LingShu 自己定义和控制：
 archive/legacy-sanic-20260628
 ```
 
-历史提交：
+封存提交：
 
 ```text
 b869270e0ec7cbc324d17ef246e39d0873aab14f
@@ -40,37 +34,17 @@ b869270e0ec7cbc324d17ef246e39d0873aab14f
 
 旧源码、测试、依赖、Issue、PR 和 API 只作历史参考，不是新框架基线。
 
-## 2. 最高架构原则
+## 2. 最高原则
 
-### 自主内核
+- **自主内核**：核心运行能力由 LingShu 自行实现；核心第三方依赖逐项评审。
+- **机制与政策分离**：认证、租户、权限、数据库、缓存和业务模型不写进 Core。
+- **单向无环依赖**：依赖可机器验证；下层不依赖业务集成、项目代码、测试工具或根 facade。
+- **显式生命周期**：禁止 import 副作用启动任务、建连、打开文件或修改运行状态。
+- **默认隔离与有界**：Scope 隔离；连接、请求、队列、任务、记录和磁盘必须有界。
+- **Deadline、取消与清理**：绝对 monotonic Deadline；取消传播；所有退出路径有界清理。
+- **安全优先**：协议歧义拒绝，敏感数据默认不记录，不自造密码学或证书验证。
 
-核心运行能力由 LingShu 自行实现，不通过安装其他上层 Web 框架获得。核心第三方依赖必须逐项评审。
-
-### 机制与政策分离
-
-核心只提供通用机制，不把认证、租户、权限、数据库、缓存或业务模型写进核心。
-
-### 单向无环依赖
-
-依赖必须显式、无环并可机器验证。下层组件不得反向依赖业务集成、项目代码、测试工具或根级公共 facade。
-
-### 显式生命周期
-
-禁止通过 import 副作用注册、建连、启动任务、打开文件或修改进程级运行状态。启动、运行、排空和关闭必须有状态、有界预算、失败回滚、逆序清理、幂等关闭和可观测结果。
-
-### 默认隔离与有界
-
-Application、Worker、Connection、Request、Operation 和 Extension 状态按 Scope 隔离。连接、请求体、队列、任务、执行器、记录和磁盘使用必须有上限、背压或拒绝策略。
-
-### Deadline、取消与清理
-
-Deadline 是调用链共享的绝对 monotonic 预算，子调用只能继承或缩短。取消必须传播；任何退出路径都必须执行确定性、有界清理。
-
-### 安全优先
-
-协议歧义直接拒绝；敏感数据默认不记录；不自造密码学或证书验证；安全、正确性和可恢复性优先于未经验证的极限性能。
-
-## 3. ADR-001：单仓库与开发并发
+## 3. ADR-001：单仓库与开发并发（Confirmed）
 
 规范仓库：
 
@@ -78,19 +52,15 @@ Deadline 是调用链共享的绝对 monotonic 预算，子调用只能继承或
 qianhuaqi/lingshu
 ```
 
-开发治理：
-
-- 一个任务对应一个 Issue、分支、主写入者和 PR；
-- 并行开发使用独立 worktree/clone、虚拟环境、缓存和端口；
-- Issue 必须声明写入范围、依赖和集成顺序；
+- 一个任务对应一个 Issue、一个 writer-prefixed branch、一个主写入者和一个 PR；
+- 并行开发使用独立 worktree/clone、环境、缓存和端口；
+- Issue 声明 write scope、依赖和集成顺序；
 - 重叠路径或同一公共契约禁止并行；
-- 公共契约先合并，依赖任务再同步；
-- 开发可并行，进入 `main` 必须串行；
+- 公共契约先合并；
+- 开发可并行，进入 `main` 串行；
 - 最终合并权属于项目负责人。
 
-## 4. ADR-002：运行时并发
-
-正确性基线是 Python 标准库 `asyncio` 语义。
+## 4. ADR-002：运行时并发（Confirmed）
 
 ```text
 Supervisor
@@ -104,25 +74,26 @@ Supervisor
                └─ Operation / child tasks
 ```
 
-确认规则：
+确认：
 
+- 标准库 `asyncio` 语义是正确性基线；
 - Worker 不共享可变 Python 应用状态；
-- 请求创建的任务默认归 Request 所有；
-- 未登记 fire-and-forget 任务禁止；
+- 请求子任务默认归 Request Scope；
+- 未登记 fire-and-forget 禁止；
 - 一个 HTTP/1.1 连接同一时刻执行一个请求；
-- 连接、请求、队列、执行器、依赖、Telemetry 和 Runtime Record 均有界；
-- 网络、解析、请求体、业务、依赖和响应形成完整背压链；
-- Deadline 使用绝对 monotonic time；
-- Blocking I/O 与 CPU 密集工作不得阻塞 Worker event loop；
+- Admission、Queue、Buffer、Executor、Dependency、Telemetry、Record 全部有界；
+- 网络到响应形成完整背压链；
+- Deadline 是绝对 monotonic time；
+- Blocking I/O 和 CPU 工作隔离；
 - Worker 重启有预算和退避；
-- 关闭顺序为停止准入、排空、取消、逆序清理、刷新记录、关闭 Transport/执行器和 hard-stop。
+- Shutdown 按停止准入、排空、取消、逆序清理、刷新记录、关闭资源、hard stop 执行。
 
 详细文档：
 
 - `docs/decisions/ADR-002-runtime-concurrency-model.md`
 - `docs/architecture/RUNTIME_CONCURRENCY_MODEL.md`
 
-## 5. ADR-003：打包、源码和组件边界
+## 5. ADR-003：源码、包和组件边界（Confirmed）
 
 ```text
 Repository:          qianhuaqi/lingshu
@@ -133,9 +104,9 @@ Production source:   lingshu/
 src layout:          prohibited
 ```
 
-初始框架采用一个 distribution、一个 import package、一个根级 `pyproject.toml`、一个版本和一个发布节奏。
+初始采用一个 distribution、一个 import package、一个根级 `pyproject.toml`、一个版本和一个发布节奏。
 
-目标组件：
+组件：
 
 ```text
 lingshu.core
@@ -148,7 +119,7 @@ lingshu.cli
 lingshu.testing
 ```
 
-依赖方向：
+依赖：
 
 ```text
 runtime     → core
@@ -160,82 +131,65 @@ cli         → public composition surface
 testing     → public/test-support surfaces
 ```
 
-禁止依赖环、下层导入根 facade、生产代码依赖 testing、以及未经批准的跨组件私有导入。
-
-`lingshu/__init__.py` 是受控公共 facade，采用显式 `__all__`。深层 import 默认私有。可选集成只在激活时加载。
-
-不使用 `src/` 后，打包验收必须构建 wheel/sdist、在全新环境非 editable 安装、切换到仓库外执行测试，并禁止仓库 `PYTHONPATH` 注入。
+`lingshu/__init__.py` 是受控 facade，显式 `__all__`；深层 import 默认私有。生产代码不得依赖 testing。打包验收必须在仓库外对非 editable wheel 执行。
 
 详细文档：
 
 - `docs/decisions/ADR-003-package-source-layout-and-component-boundaries.md`
 - `docs/architecture/PACKAGE_AND_COMPONENT_LAYOUT.md`
 
-## 6. ADR-004：Application Kernel 与请求管线
+## 6. ADR-004：Application Kernel 与请求管线（Confirmed）
 
-公开应用类型是：
+根级最小公开 API：
 
 ```python
 from lingshu import LingShu, Request, Response, HTTPException
 ```
 
-内部 Kernel 负责生命周期、注册目录、Application Revision、freeze 校验、不可变 Application Plan 和资源生命周期契约。Kernel 不拥有 Listener、HTTP Parser 或业务政策，也不依赖 Server。
-
 Application 生命周期：
 
 ```text
-CREATED
-→ CONFIGURING
-→ FROZEN
-→ STARTING
-→ RUNNING
-→ DRAINING
-→ STOPPING
-→ STOPPED
+CREATED → CONFIGURING → FROZEN → STARTING → RUNNING
+                                      ↓          ↓
+                                   STOPPING ← DRAINING
+                                      ↓
+                                   STOPPED
 ```
 
-Route、Middleware、Exception Mapper、Extension、配置和 Hook 只在 freeze 前注册。Freeze 原子发布完整不可变 Plan；失败不得发布部分状态。
+- Route、Middleware、Exception Mapper、Extension、配置和 Hook 只在 freeze 前注册；
+- freeze 原子发布完整不可变 Application Plan；失败无部分状态；
+- 初始 Handler 是接收一个 Request 的 async callable；
+- Middleware 是 Application/Route 两层确定性洋葱模型；
+- `call_next` 单次且 Scope-bound；
+- Request metadata 只读，Body 有界、背压、单消费者；
+- Handler 返回只规范化一次；初始支持 Response、str、bytes-like；
+- 默认拒绝 None、tuple magic、任意 iterator/generator 和未知对象。
 
-初始 Handler：
-
-```python
-async def handler(request: Request) -> Response | SupportedReturnValue:
-    ...
-```
-
-初始只接受异步 Handler 和显式 Request，不自动依赖注入，也不把同步 Handler 直接放在 event loop 执行。
-
-Middleware 使用 Application 与 Route 两层确定性洋葱模型，`call_next` 单次且受当前 Scope 约束。
-
-固定请求管线：
+请求管线：
 
 ```text
-协议接入
+Protocol Accept
 → Request Scope / Deadline
-→ 身份与 Runtime Record
-→ Request 与 Body Stream
-→ Application 准入
+→ IDs / Runtime Record
+→ Request / Body
+→ Admission
 → Application Middleware
 → Route Match
-→ Route 准入与 Capability
+→ Route Admission / Capability
 → Route Middleware
 → Handler
 → Response Normalization
-→ Middleware 逆序退出
+→ Middleware Unwind
 → Exception Fallback
 → Response Prepare
-→ Response Commit
-→ Body/Stream 发送
+→ Commit
+→ Body/Stream Write
 → Record Finalize
 → Task Cleanup
-→ Scope Resource Release
+→ Scope Release
 ```
 
-Request metadata 只读；Body 有界、背压、单消费者；Request state 属于 Scope。
-
-初始 Handler 返回支持 Response、str 和 bytes-like。默认拒绝 None、tuple magic、任意 iterator/generator 和未知对象。
-
-Response 状态：
+Response：
 
 ```text
 NEW → PREPARED → COMMITTED → COMPLETED
@@ -243,34 +197,29 @@ NEW → PREPARED → COMMITTED → COMPLETED
                    ABORTED ← ABORTED
 ```
 
-Commit 后状态码和 Header 不可修改，也不能生成第二个 Response。
+Commit 后 status/header 不可变且不能创建第二响应。
 
 详细文档：
 
 - `docs/decisions/ADR-004-application-kernel-request-pipeline-and-public-api.md`
 - `docs/architecture/APPLICATION_KERNEL_AND_REQUEST_PIPELINE.md`
 
-## 7. ADR-005：Hardening Foundations
+## 7. ADR-005：Hardening Foundations（Confirmed）
 
-### 时间与标识
+### 时间与 ID
 
-- UTC wall time 用于可读时间、Retention 和跨进程关联；
-- monotonic time 用于 Deadline、timeout、queue wait、scheduling 和 duration；
-- 每个 Runtime Record 使用递增 event sequence；
-- Request、Connection、Trace、Operation、Worker 和 Record ID 是 128-bit opaque typed value；
-- RevisionId 是规范化 Application Revision 的 SHA-256；
-- LingShu 永远生成内部 RequestId；入站 Request ID 只作为不可信外部关联；
-- remote TraceId 只代表 correlation，不代表授权或信任。
+- RFC3339 UTC wall time 用于展示、Retention 和跨进程关联；
+- monotonic time 用于 Deadline、Timeout、Queue Wait、Scheduling、Duration；
+- Request/Connection/Trace/Operation/Worker/Record ID 是 typed opaque 128-bit value；
+- RevisionId 是规范 Revision 的 SHA-256；
+- LingShu 总是生成内部 RequestId；外部 Request ID 只是不可信关联；
+- remote TraceId 只用于 correlation。
 
-### Exception 与 Error Code
+### Error
 
-Framework Error 具有稳定 code、safe message、client visibility、retryability、severity、fatal scope、safe details 和内部 cause。
-
-Client-visible Framework Error 使用 `application/problem+json`。默认不暴露 Traceback、路径、配置、环境信息、凭据、请求正文、SQL 或内部拓扑。Cancellation 仍是控制流。
+Framework Error 具有 stable code、safe message、client visibility、retryability、severity、fatal scope、safe details 和内部 cause。Client 使用 `application/problem+json`。默认不暴露 Traceback、路径、配置、环境信息、凭据、Body、SQL 或内部拓扑。Cancellation 是控制流。
 
 ### Configuration
-
-优先级：
 
 ```text
 built-in defaults
@@ -280,25 +229,16 @@ built-in defaults
 < explicit programmatic overrides
 ```
 
-配置必须经过 Schema normalize/validate，unknown key 默认失败，配置文件具有 schema version，迁移必须显式、确定和可测试。
-
-运行时只接收不可变 typed Configuration Snapshot。受保护配置值通过专用类型或 Provider 处理，并在所有输出路径中隐藏。
+配置 Schema/version 严格校验；Protected value 统一隐藏；运行时只接收 immutable typed Snapshot。
 
 Reload：
 
 ```text
-load
-→ normalize
-→ validate
-→ resolve protected values
-→ prepare resources
-→ compile/freeze Revision
-→ atomic publish
-→ drain old Revision
-→ cleanup old resources
+load → normalize → validate → resolve protected values → prepare
+→ compile/freeze Revision → atomic publish → drain old → cleanup old
 ```
 
-Publish 前失败保持旧 Revision 不变；无法安全回滚的 Publish 后失败进入明确 degraded/not-ready 状态。
+Publish 前失败保持旧 Revision；无法安全回滚则进入明确 degraded/not-ready。
 
 ### Serialization
 
@@ -311,46 +251,21 @@ application/json; charset=utf-8
 application/problem+json; charset=utf-8
 ```
 
-JSON 只使用 UTF-8，拒绝 duplicate key、NaN 和 Infinity，并限制 bytes、depth、items、strings 和 number tokens。未知对象不自动序列化；datetime、bytes、Decimal 和自定义值必须显式注册 Serializer。
-
-不支持请求 Content-Type 返回 415；无可接受响应格式返回 406；禁止 Content Sniffing。
+JSON UTF-8、有限、拒绝 duplicate key、NaN/Infinity 和未知对象；datetime/bytes/Decimal/domain type 使用显式 Serializer。415 表示不支持请求类型，406 表示没有可接受响应，禁止 Content Sniffing。
 
 ### Runtime Record
 
-每个业务请求在 Handler 前预留 RecordId、Queue Capacity、Record/Event Budget、Durability 和 Storage Health。默认策略是 `required`：无法保证记录能力时在业务处理前拒绝请求。
+每个业务请求在 Handler 前预留 RecordId、Queue Capacity、Record/Event Budget、Durability 和 Storage Health。默认 `required`，无法保证记录时在业务执行前拒绝。
 
-Event Envelope 版本化且 append-only，包含时间、顺序、身份、组件、Outcome、HTTP 结果、Error Code、Cancellation 和有界 Attributes。
+默认本地 Writer：versioned append-only Event Envelope → bounded queue → UTF-8 JSON Lines segments → atomic manifest → retention/recovery。
 
-默认本地 Writer 使用 append-only UTF-8 JSON Lines rotated segments 和 atomic manifest/index。
+Durability：`buffered`、`flush`、`fsync`。Event、Record、Queue、Segment、Disk、Retention、Cleanup、Flush、Shutdown 和 Recovery 全部有预算。
 
-Durability：
-
-```text
-buffered
-flush
-fsync
-```
-
-记录系统具有 Event、Record、Queue、Segment、Disk、Retention、Cleanup、Flush、Shutdown 和 Recovery 预算。
-
-Disk 状态：
-
-```text
-normal
-→ soft watermark
-→ hard watermark
-→ critical reserve
-```
-
-Hard Watermark 下服务 Not Ready 并拒绝新的 required 请求。Critical Reserve 只保留最小故障、健康、关闭和数据丢失诊断。Retention 不得删除 Active Segment。
-
-Crash Recovery 校验路径、权限、Manifest 和 Tail，截断不完整末行，隔离无法恢复 Segment，重建索引并报告估算损失。只有记录策略可满足后才 Ready。
+Disk：normal → soft → hard → critical。Hard 状态 Not Ready 并拒绝 required 请求；Critical 仅保留最小故障/健康/关闭诊断。Active Segment 不被 Retention 删除。
 
 ### Telemetry
 
-Logs、Traces、Diagnostics 和 Runtime Records 共享统一字段和 `public/internal/sensitive/secret` 分类。
-
-Request、Record、Trace、Operation、Connection ID、Raw Path、Raw Error Message 和 User/Tenant ID 默认禁止作为 Metric Label。Metric 使用 Component、Route Template/Name、Method、Status Class、Outcome、Stable Error Code 和 Cancellation Reason 等有界维度。
+Logs、Traces、Diagnostics 和 Records 共享字段与 `public/internal/sensitive/secret` 分类。Request/Record/Trace/Operation/Connection ID、Raw Path、Raw Error Message、User/Tenant ID 默认禁止作为 Metric Label。
 
 详细文档：
 
@@ -358,71 +273,228 @@ Request、Record、Trace、Operation、Connection ID、Raw Path、Raw Error Mess
 - `docs/architecture/HARDENING_FOUNDATIONS.md`
 - `docs/architecture/P0_HARDENING_CHECKLIST.md`
 
-`P0_HARDENING_CHECKLIST.md` 已标记为 Verified Integration Mapping，不再是第二架构来源。
+## 8. ADR-006：Executable、CLI 与 Build Baseline（Proposed）
 
-## 8. 当前禁止事项
+本节只有在 P0-D6 PR 合并后才成为 Confirmed。
+
+### 8.1 所有权
+
+```text
+Application  → routes/middleware/extensions/config revision/lifecycle plan
+Server       → one Worker loop/runtime/listener/protocol/drain
+Supervisor   → spawn/listener transfer/readiness/restart/signals/exit
+CLI          → arguments/target/config override/Supervisor/diagnostics
+```
+
+Application 不负责进程监督；Kernel 不依赖 Server。
+
+### 8.2 公共单 Worker Server API
+
+文档化公共子包：
+
+```python
+from lingshu.server import Server, ServerConfig, serve
+```
+
+```python
+server = Server(app, ServerConfig(host="127.0.0.1", port=8000))
+await server.start()
+await server.wait_closed()
+```
+
+```python
+serve(app, host="127.0.0.1", port=8000)
+```
+
+`Server`/`serve` 只支持单 Worker；多 Worker Supervisor 初期保持 CLI/internal。Root API 不增加 Server 名称。`serve()` 拥有 event loop 和主线程信号，不能在已运行 loop 中调用。
+
+### 8.3 CLI 与 Target
+
+```text
+lingshu run TARGET
+lingshu check TARGET
+lingshu version
+python -m lingshu ...
+```
+
+Target：
+
+```text
+module:attribute
+```
+
+```text
+myapp.main:app
+myapp:create_app --factory
+```
+
+禁止文件路径、表达式、调用语法、索引、隐式扫描和 dotted attribute traversal。普通模式必须得到 LingShu 实例；Factory 是同步零参数 callable 并返回 LingShu。
+
+### 8.4 Profile 与 Development Reload
+
+```text
+production
+development
+test
+```
+
+`run` 默认 production；`--reload` 显式选择 development。
+
+Development Reload 使用一个 Watcher Parent + 一个 Child Worker 的进程替换模型；禁止 in-process module reload，禁止与多 Worker 同时使用，也不等同于 ADR-005 生产配置 Revision Reload。
+
+### 8.5 Multi-Worker
+
+- Linux、Windows、macOS 统一以 `spawn` 语义为基线；
+- Supervisor 不依赖 parent-imported mutable Application；
+- 每个 Worker 独立 import、build/freeze Application，启动一个 loop/runtime；
+- required Workers 必须报告相同 RevisionId；
+- deterministic import/config/freeze failure 不进入 restart loop；
+- unexpected runtime exit 使用 ADR-002 restart budget。
+
+### 8.6 Listener、Readiness 与 Signal
+
+Supervisor 只绑定一次 listener，并通过平台安全机制显式传递/复制到 Worker；不依赖 `SO_REUSEPORT`，Worker 不竞争 bind。
+
+Ready 必须满足 listener bound、required Workers ready、RevisionId 一致、required extension/resources ready、Runtime Record required policy available。
+
+第一终止信号进入 Graceful Drain；第二信号或 Graceful Timeout 进入 Hard Stop。CLI/Supervisor 拥有进程信号。SIGHUP Reload 延后。
+
+Exit Codes：
+
+```text
+0 clean/success
+1 generic failure
+2 CLI usage
+3 app import/discovery/type
+4 config/freeze/extension startup
+5 listener/platform startup
+6 Worker fatal/restart budget
+7 graceful timeout/hard stop
+8 required Runtime Record unavailable
+70 internal CLI/Supervisor defect
+```
+
+### 8.7 Python 与平台
+
+```text
+Implementation: CPython
+Minimum:        3.12
+Required:       3.12, 3.13, 3.14
+Preview:        3.15 prerelease
+requires-python: >=3.12
+```
+
+不设置人为上限。PyPy、free-threaded CPython、32-bit 和其他解释器延后。
+
+Tier 1：维护中的 64-bit Linux、支持期内 64-bit Windows、支持期内 64-bit macOS。Required architecture：Linux x86_64、Windows x86_64、macOS arm64。Linux arm64 和 macOS x86_64 在 CI 容量可用时作为 Tier 2。
+
+### 8.8 Build 与 Version
+
+Build Backend：
+
+```toml
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+```
+
+使用根级 PEP 621 `[project]`；初始不创建 `setup.py`/`setup.cfg`；初始不使用 dynamic metadata。
+
+唯一手工 Version Source：
+
+```text
+[project].version
+```
+
+运行时和 CLI 使用：
+
+```python
+importlib.metadata.version("lingshu")
+```
+
+禁止重复手工 `__version__`、组件独立版本和未决策的 SCM dynamic version。
+
+Console：
+
+```toml
+[project.scripts]
+lingshu = "lingshu.cli:main"
+```
+
+### 8.9 Artifact 与 CI
+
+初始产物：
+
+```text
+lingshu-<version>-py3-none-any.whl
+lingshu-<version>.tar.gz
+```
+
+Wheel 不包含 tests、tools、benchmarks、fuzz、cache、local config、Runtime Record、credential 或 secret。
+
+Packaging Gate：isolated build → inventory/metadata → clean venv → non-editable install → checkout 外 import/CLI/smoke → sdist rebuild → metadata/inventory compare → editable developer test → uninstall verification。
+
+Required PR Matrix：
+
+```text
+Linux   3.12, 3.13, 3.14
+Windows 3.12, 3.14
+macOS   3.12, 3.14
+```
+
+Preview：Linux CPython 3.15 prerelease，结果可见但非阻断，直到通过完整 Gate 后提升为 Required。
+
+详细提案：
+
+- `docs/decisions/ADR-006-executable-cli-support-and-build-baseline.md`
+- `docs/architecture/EXECUTABLE_AND_BUILD_BASELINE.md`
+
+## 9. 当前禁止事项
 
 P0 最终冻结前禁止：
 
-- 创建生产 `lingshu/` 目录、`tests/` 骨架或 `pyproject.toml`；
-- 创建 `src/lingshu/` 或初始 `packages/` 结构；
-- 引入运行时依赖；
-- 实现 Kernel、Runtime、HTTP、Server、Record、Config、Serializer、CLI 或 Extension；
+- 创建生产 `lingshu/`、`tests/`、`pyproject.toml` 或 CI Workflow；
+- 创建 `src/lingshu/` 或初始 `packages/`；
+- 引入运行时或构建依赖到实际项目；
+- 实现 Kernel、Runtime、HTTP、Server、Supervisor、CLI、Record、Config、Serializer 或 Extension；
 - 发布安装包；
-- 建立旧框架适配、迁移层或兼容转发层；
-- 多个开发者共享同一可写目录或分支；
-- 并行任务修改重叠路径或同一公共契约；
+- 多个开发者共享同一可写目录/分支；
+- 并行修改重叠路径或同一公共契约；
 - 启动 P1。
 
-## 9. 下一项：P0-D6 Executable and Packaging Baseline
+## 10. P0-D6 延后
 
-P0-D6 应确认：
+- 实际第一开发版本；
+- numeric defaults 和 health endpoint path；
+- SIGHUP 与 multi-Worker config rollout transport；
+- advanced CLI、async/parameterized factory；
+- public multi-Worker Supervisor API；
+- PyPy、free-threaded、32-bit、extra architectures；
+- native extension/platform wheel；
+- exact OS floors；
+- License、PyPI、签名和 Attestation。
 
-1. Public Server Startup / Serve API；
-2. Application、Server 与 CLI 的所有权边界；
-3. CLI command grammar 和 `module:app` discovery；
-4. Development 与 Production 执行和 Reload 边界；
-5. Worker/process 参数、Signal、Readiness 和 Exit Code；
-6. Python 最低版本和平台支持矩阵；
-7. Build Backend 与权威 Version Source；
-8. Package Metadata、Console Entry Point、Wheel/sdist 与 CI Matrix；
-9. Startup、Discovery、Signal、Packaging 和 Clean-install Contract Tests。
+## 11. P0 后续主要事项
 
-## 10. 仍待后续决策
+- License、Contribution、Security、Supported Versions、Changelog、Code of Conduct；
+- Release/Compatibility Policy 与 v0.x/v1.0 规则；
+- P1 implementation scope、Issue 分解和验收矩阵；
+- 最终 P0 Freeze 与多多明确授权启动 P1。
 
-- exact numeric defaults 和 environment profiles；
-- automatic HEAD/OPTIONS；
-- host routing、reverse routing、mount 与 sub-application；
-- form、multipart、upload、compression 和 streaming formats；
-- sync Handler adaptation 与 dependency injection；
-- official capabilities and integrations；
-- HTTP/2、HTTP/3 和 optional accelerators；
-- Release、Compatibility、License、Contribution、Security、Changelog 和 Code of Conduct；
-- final P0 freeze 与 P1 implementation plan。
+## 12. 决策确认流程
 
-## 11. 决策确认流程
+提案只有满足 dedicated Issue、ADR/Blueprint amendment、多多确认、PR 审查合并、状态表同步，才成为 Confirmed。
 
-提案只有同时满足以下条件才成为 Confirmed：
-
-1. 专用 GitHub Issue；
-2. Blueprint amendment 或 ADR；
-3. 多多明确确认；
-4. PR 审查并合并；
-5. `P0_DECISION_STATUS.md` 同步。
-
-## 12. P0 退出条件
-
-P0 只有满足以下条件才能结束：
+## 13. P0 退出条件
 
 1. 本总纲由多多确认；
-2. 所有接受的 Hardening 已并入；
-3. Hardening Integration Verification 为 Verified；
-4. 不存在第二份同级总体设计；
-5. Distribution、源码、组件和扩展边界已确认；
-6. Kernel、HTTP、Server、Runtime Record 职责与合同已确认；
-7. 启动、请求、响应、并发、关闭和崩溃恢复语义已确认；
-8. P1 范围和验收标准可以直接写入 Issue；
-9. 历史实施 Issue 已关闭或归档；
-10. 多多明确授权启动 P1。
+2. Hardening 全部并入且 Verification 为 Verified；
+3. 不存在第二份同级总体设计；
+4. Distribution、源码、组件、Kernel、HTTP、Server、Record、CLI、Build 边界确认；
+5. 启动、请求、响应、并发、关闭、崩溃恢复和 Packaging 语义确认；
+6. Public Governance 和 Release Policy 确认；
+7. P1 范围、Issue 分解和验收标准可直接执行；
+8. 历史实施 Issue 已关闭或归档；
+9. 多多明确授权启动 P1。
 
-在此之前，所有开发模型只允许执行 P0 文档和治理工作。
+在此之前，所有开发模型只允许执行 P0 文档与治理工作。
