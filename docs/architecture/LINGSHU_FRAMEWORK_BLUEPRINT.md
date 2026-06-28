@@ -4,8 +4,9 @@
 - 产品决策人：多多
 - 状态：P0 候选总纲，尚未冻结
 - GitHub Issue：#25
+- 当前决策 Issue：#31
 - 规范仓库：`qianhuaqi/lingshu`
-- 治理基线：PR #29
+- 治理基线：latest accepted `main`
 - 决策状态表：`docs/architecture/P0_DECISION_STATUS.md`
 - 历史详细候选稿：`docs/architecture/candidates/LINGSHU_FRAMEWORK_BLUEPRINT_V0.6_CANDIDATE.md`
 
@@ -34,8 +35,8 @@ LingShu 自己定义并控制：
 - Request ID 与请求级 Runtime Record；
 - CLI、测试支持和后续生态。
 
-这些职责已经确认，但它们最终采用单包、内部模块还是多个 distribution，
-以及具体目录如何组织，尚未确认。
+这些职责已经确认，但它们最终采用一个 distribution、多个 distribution、
+内部模块还是独立安装单元，以及具体目录如何组织，尚未确认。
 
 ## 2. 历史实现边界
 
@@ -131,6 +132,53 @@ Deadline 是完整调用链预算，不能在每层重新获得完整超时。
 - 不自造密码学算法、TLS 算法和证书验证；
 - 安全、正确性和可恢复性优先于未经验证的极限性能。
 
+### 3.9 单仓库治理
+
+LingShu 采用一个规范 GitHub 仓库：
+
+```text
+qianhuaqi/lingshu
+```
+
+框架核心、官方能力、测试、文档、示例、构建工具、协议测试、安全测试和发布
+元数据原则上在该仓库统一治理。除非未来 ADR 证明必须拆分，否则不为 Core、
+HTTP、Server、Record 或官方扩展另建仓库。
+
+单仓库不等于所有开发者共用一条分支或一个工作目录。并行开发必须遵循
+ADR-001 和 `docs/development/CONCURRENT_DEVELOPMENT.md`：
+
+- 一个任务对应一个 Issue、一个分支、一个主写入者和一个 PR；
+- 每个并行开发者使用独立 worktree 或独立 clone；
+- 每个工作区使用独立虚拟环境、运行目录、缓存和端口；
+- Issue 必须声明写入范围、依赖关系和集成顺序；
+- 写入范围重叠或修改同一公共契约时禁止并行；
+- 公共契约和基础能力先合并，依赖任务再同步；
+- 开发可以并行，进入 `main` 的集成必须串行；
+- 最终合并权属于项目负责人。
+
+该决策只确认一个仓库，不确认一个还是多个 Python distribution，也不确认
+`packages/`、`src/` 或最终源码目录。
+
+### 3.10 并发安全总原则
+
+开发并发和框架运行时并发是两个独立问题。
+
+开发并发按照 ADR-001 通过任务隔离、路径所有权和串行集成解决。
+
+框架运行时并发的具体实现尚未冻结，但必须满足以下不可退让的要求：
+
+- 并发数量、队列、任务和资源必须有界；
+- 任务必须有明确所有者和生命周期；
+- Request、Context、Operation 和 Extension 状态必须隔离；
+- Blocking 工作不得无控制地阻塞事件循环；
+- Deadline 和取消必须沿调用链传播；
+- Shutdown 必须排空、取消或终止剩余任务，并给出可观测结果；
+- 超载必须背压或拒绝，不能无限排队；
+- 必须测试竞态、死锁、任务泄漏、连接泄漏、取消风暴和慢客户端。
+
+事件循环、Worker、多进程、线程池、Task Group 和 Admission Control 的具体模型
+仍属于 P0 后续决策。
+
 ## 4. Request ID 与 Runtime Record
 
 每个进入业务处理的请求必须拥有内部 Request ID，并建立独立、可审计的
@@ -159,7 +207,7 @@ Runtime Record 必须具备：
 - 磁盘安全线；
 - 写入失败处理。
 
-具体目录、存储格式、独立包还是内部模块仍待确认。
+具体目录、存储格式、独立 distribution 还是内部模块仍待确认。
 
 ## 5. 当前禁止事项
 
@@ -173,23 +221,31 @@ P0 冻结前禁止：
 - 建立 Sanic 适配或迁移层；
 - 建立旧 API 兼容层；
 - 按历史 v0.6 候选稿直接创建 `packages/` 或任何 `src/` 目录；
+- 多个开发者共享同一可写工作目录；
+- 多个主写入者同时写同一分支；
+- 两个并行任务修改重叠路径或同一公共契约；
 - 启动 P1。
 
 ## 6. 尚未确认的架构决策
 
 以下内容必须由多多逐项确认后才能进入本文件的冻结部分：
 
-### 6.1 仓库与源码布局
+### 6.1 已确认单仓库后的打包与源码布局
 
-- 单包还是单仓多 distribution；
+已经确认：只有一个规范仓库 `qianhuaqi/lingshu`。
+
+仍未确认：
+
+- 一个 Python distribution 还是在同一仓库发布多个 distribution；
 - 是否使用 `packages/`；
 - 是否使用任何 `src/` layout；
 - 是否直接采用根级 `lingshu/`；
-- tests、examples、tools、templates、benchmarks、fuzz 等目录位置。
+- tests、examples、tools、templates、benchmarks、fuzz 等目录位置；
+- 一个还是多个 `pyproject.toml`。
 
 ### 6.2 组件边界
 
-- Core、HTTP、Server、Record、CLI 是内部模块还是独立包；
+- Core、HTTP、Server、Record、CLI 是内部模块还是独立 distribution；
 - 它们之间的最终依赖方向；
 - Request Record 是否默认内置；
 - WebSocket、OpenAPI、Observability 等能力的归属。
@@ -207,9 +263,21 @@ P0 冻结前禁止：
 - Resilience；
 - Scheduler、Storage 等能力。
 
-这里列出的是能力候选，不代表已经批准独立包。
+这里列出的是能力候选，不代表已经批准独立 distribution。
 
-### 6.4 发布与支持
+### 6.4 运行时并发实现
+
+- 默认事件循环与替代实现；
+- 结构化 Task Group API；
+- Worker 与多进程模型；
+- 线程和 Blocking 工作隔离；
+- App、Worker、Request、Operation 的并发所有权；
+- 并发限额、Admission Control 与背压接口；
+- Deadline 与取消 API；
+- 优雅关闭和任务排空顺序；
+- 竞态、死锁、泄漏与超载测试矩阵。
+
+### 6.5 发布与支持
 
 - P1 之后的实施阶段；
 - v0.x 版本映射；
@@ -255,9 +323,9 @@ P0 只有满足以下条件才能结束：
 1. 本总纲由多多确认；
 2. 所有已确认 hardening 内容已并入本文件；
 3. 不存在第二份具有相同权威级别的总体设计；
-4. 仓库、源码、包和扩展结构已经确认；
+4. 单仓库内的 distribution、源码和扩展结构已经确认；
 5. Kernel、HTTP、Server、Request Record 的职责边界已经确认；
-6. 启动、请求、响应、关闭和崩溃恢复语义已经确认；
+6. 运行时并发、启动、请求、响应、关闭和崩溃恢复语义已经确认；
 7. P1 范围和验收标准可直接写入 Issue；
 8. 旧实施 Issue 已关闭或历史化；
 9. 多多明确授权启动 P1。
