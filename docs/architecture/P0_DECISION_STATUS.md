@@ -1,7 +1,8 @@
 # P0 Architecture Decision Status
 
 - Status: Active P0 control document
-- Issue: #25
+- Parent Issue: #25
+- Current decision Issue: #31
 - Purpose: track confirmation state without creating a second architecture design
 - Last updated: 2026-06-28
 
@@ -34,6 +35,22 @@ LingShu will define and control its own:
 - CLI and framework ecosystem.
 
 These confirmed responsibilities do not yet confirm their directory or package placement.
+
+### Single canonical repository
+
+- The canonical repository is `qianhuaqi/lingshu`.
+- Framework core, official capabilities, tests, documentation, examples, build tooling, protocol tests, security tests, and release metadata are governed in this repository unless a future accepted ADR proves a separate repository is necessary.
+- This confirms one repository only. It does not yet confirm one distribution, multiple distributions, a `packages/` root, or a `src/` layout.
+- ADR-001 defines the repository and concurrent-development model.
+
+### Concurrent development governance
+
+- Every concurrent task uses one Issue, one writer-prefixed branch, one primary writer, one independent worktree or clone, one independent virtual environment, and one Pull Request.
+- Parallel tasks must declare non-overlapping write scopes.
+- Overlapping write scopes, duplicate contract definitions, and shared cross-cutting files are serialized unless the project lead explicitly approves an exception.
+- Development may be parallel, but integration into `main` is serial.
+- Shared contracts and foundations merge before dependent features.
+- Runtime concurrency is a separate architecture decision, but it must be bounded, isolated, cancellable, observable, and deterministically cleaned up.
 
 ### Repository reset
 
@@ -71,19 +88,25 @@ The following are rejected for the greenfield framework:
 - migration of the old runtime into the new source tree;
 - old API compatibility shims without real released consumers;
 - using archived tests as acceptance tests for the new framework;
-- continuing the old C0/C1/C2 or R1-R6 implementation roadmap.
+- continuing the old C0/C1/C2 or R1-R6 implementation roadmap;
+- separate repositories for Core, HTTP, Server, Record, or official capabilities during initial development;
+- multiple developers writing in the same working directory;
+- multiple primary writers on one branch;
+- parallel branches modifying the same public contract or overlapping write scope;
+- a long-lived shared `develop` branch;
+- automatic merging of concurrent Pull Requests.
 
 ## Candidate decisions — not executable
 
 The following Blueprint proposals are candidates only and must not be used to create P1 files or packages:
 
-### Repository and packaging
+### Packaging inside the confirmed single repository
 
-- monorepo with many independent distributions;
+- one Python distribution versus multiple distributions;
 - a `packages/` repository root;
 - separate `lingshu-core`, `lingshu-http`, `lingshu-server`, `lingshu-record`, and `lingshu-cli` distributions;
-- a thin `lingshu-framework` aggregate distribution;
-- one `pyproject.toml` per internal package;
+- a thin aggregate distribution;
+- one `pyproject.toml` versus multiple package-level `pyproject.toml` files;
 - exact distribution names and import-package names.
 
 ### Source layout
@@ -95,11 +118,25 @@ The following Blueprint proposals are candidates only and must not be used to cr
 
 ### Component boundaries
 
-- whether Core, HTTP, Server, and Record are separate packages or internal modules;
+- whether Core, HTTP, Server, and Record are separate distributions or internal modules;
 - exact dependency direction between those components;
 - whether Request Record is built into the default installation or installed separately;
 - whether WebSocket belongs to the server/runtime or a later optional package;
 - exact extension lifecycle and capability-container design.
+
+### Runtime concurrency implementation
+
+The following remain unresolved even though the safety invariants are confirmed:
+
+- event-loop implementation and supported alternatives;
+- structured task-group API;
+- worker and process model;
+- thread and blocking-work isolation;
+- per-app, per-worker, per-request, and per-operation concurrency ownership;
+- concurrency limits and admission control;
+- cancellation and deadline API;
+- graceful shutdown and task-draining sequence;
+- overload, race, deadlock, and resource-leak test matrix.
 
 ### Official extensions
 
