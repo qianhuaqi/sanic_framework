@@ -1,5 +1,7 @@
 # LingShu Framework / 灵枢框架
 
+Canonical repository: `qianhuaqi/lingshu`
+
 LingShu is a greenfield, independently implemented Python Web/API framework.
 
 LingShu does not depend on Sanic, FastAPI, Flask, Django, Starlette, or any other upper-level Web framework. The archived legacy repository creates no compatibility obligation for the new framework.
