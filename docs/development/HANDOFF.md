@@ -3,40 +3,33 @@
 Updated at: 2026-06-28
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Phase: P0-D5 - Hardening Foundations
+Phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Parent Issue: #25
-Active decision Issue: #43
-Active decision branch: `human/dodo/phase-p0-d5-hardening-foundations`
+Active decision Issue: none
+Active decision branch: none
 Baseline: latest accepted `main`
-Status: proposed architecture ready for review
+Status: P0-D5 accepted; awaiting P0-D6
 
 ## Accepted decisions
 
-- P0-D1: repository and development concurrency through ADR-001 / PR #32.
+- P0-D1: repository and concurrent-development governance through ADR-001 / PR #32.
 - P0-D2: runtime concurrency through ADR-002 / PR #35.
 - P0-D3: package and component layout through ADR-003 / PR #38.
 - P0-D4: Application Kernel and request pipeline through ADR-004 / PR #41.
+- P0-D5: Hardening Foundations through ADR-005 / PR #44.
 
-## P0-D5 proposal completed on this branch
+P0-D5 merge commit:
 
-- Added `ADR-005-hardening-foundations.md`.
-- Added `HARDENING_FOUNDATIONS.md`.
-- Defined wall-clock versus monotonic time semantics.
-- Defined typed Request, Connection, Trace, Operation, Worker, Record, and Revision identifiers.
-- Defined internal correlation trust boundaries and inbound `X-Request-ID` handling.
-- Defined framework exception taxonomy and stable dotted error codes.
-- Defined safe `application/problem+json` client errors and cause redaction.
-- Defined configuration source precedence and merge rules.
-- Defined schema versions, explicit migrations, secret handling, and immutable Configuration Snapshots.
-- Defined revision-based reload, atomic publication, rollback, and degraded-state behavior.
-- Defined serializer registration, strict UTF-8 JSON, explicit custom types, and 406/415 negotiation.
-- Defined Runtime Record reservation before Handler execution.
-- Defined versioned event envelopes, append-only JSON Lines segments, atomic manifests, durability levels, budgets, watermarks, retention, and crash recovery.
-- Defined shared telemetry fields, redaction classes, and metric-cardinality restrictions.
-- Converted the temporary Hardening Checklist into a proposed integration-verification record.
-- Added no production source, package skeleton, runtime dependency, or publishing configuration.
+```text
+704146f103e2daafac7e489951497411821e9ba9
+```
 
-## Identifier proposal
+## Confirmed time and identifier model
+
+```text
+Wall clock: RFC3339 UTC for timestamps, retention, and cross-process correlation
+Monotonic: Deadline, timeout, queue wait, scheduling, and duration
+```
 
 ```text
 RequestId     128-bit / 32 lowercase hex
@@ -48,131 +41,135 @@ RecordId      128-bit / 32 lowercase hex
 RevisionId    SHA-256 / 64 lowercase hex
 ```
 
-Runtime IDs are opaque, non-semantic, cryptographically random values. Inbound Request IDs never replace internal Request IDs.
+Runtime identifiers are opaque, non-semantic, typed, and immutable. LingShu always generates the internal RequestId. Inbound request IDs remain untrusted external correlation only.
 
-## Error proposal
+## Confirmed error model
 
-Framework errors have:
+Framework errors have stable dotted codes, safe messages, client visibility, retryability, severity, fatal scope, optional safe details, and a private cause chain.
 
-```text
-stable code
-safe message
-client visibility
-retryable flag
-HTTP status when applicable
-severity
-fatal scope
-safe details
-private cause
-```
+Client-visible framework errors use `application/problem+json`. Traceback, raw exception text, absolute path, environment/configuration data, credentials, secrets, SQL, request bodies, and internal topology are hidden by default.
 
-Client errors use `application/problem+json`. Raw traceback, paths, secrets, configuration values, request bodies, SQL, credentials, and internal topology are not exposed.
+Cancellation remains control flow and cannot be swallowed as an ordinary application error.
 
-## Configuration proposal
+## Confirmed configuration model
 
 ```text
-defaults
-< file
-< environment
-< CLI
-< programmatic override
+built-in defaults
+< configuration file
+< environment variables
+< CLI overrides
+< explicit programmatic overrides
 ```
 
-Runtime configuration is an immutable typed Snapshot. Reload uses load → normalize → validate → resolve secrets → prepare → freeze → atomic publish → drain old → cleanup. Failure before publication leaves the old Revision untouched.
+Configuration is schema-driven, versioned, and strict on unknown or duplicate normalized keys. Secrets use a dedicated redacted type/provider reference. Runtime receives an immutable typed Snapshot.
 
-## Serialization proposal
+Reload transaction:
 
-- text defaults to UTF-8 `text/plain`;
-- bytes use `application/octet-stream`;
-- JSON uses UTF-8 `application/json`;
-- framework errors use `application/problem+json`;
-- duplicate JSON keys and NaN/Infinity are rejected;
-- depth, bytes, items, strings, and numeric tokens are bounded;
-- datetime, bytes, Decimal, and custom values require explicit serializers;
-- unsupported request media type returns 415;
-- unacceptable response representation returns 406.
+```text
+load
+→ normalize
+→ validate
+→ resolve secrets
+→ prepare resources
+→ compile/freeze Revision
+→ atomic publish
+→ drain old Revision
+→ cleanup old resources
+```
 
-## Runtime Record proposal
+Pre-publication failure leaves the old Revision unchanged. Unsafe post-publication recovery produces explicit degraded/not-ready state rather than hidden partial configuration.
 
-Every admitted business request reserves a Runtime Record before Handler execution.
+## Confirmed serialization model
+
+Baseline representations:
+
+```text
+text/plain; charset=utf-8
+application/octet-stream
+application/json; charset=utf-8
+application/problem+json; charset=utf-8
+```
+
+JSON is UTF-8, bounded, and strict. Duplicate keys, NaN, and Infinity are rejected. Unknown objects are not serialized automatically. Datetime, bytes, Decimal, and custom domain values require explicit serializers.
+
+Unsupported request media type produces 415. No acceptable response representation produces 406. Content sniffing is prohibited.
+
+## Confirmed Runtime Record model
+
+Every admitted business request reserves a RecordId, queue capacity, record/event budget, durability policy, and storage health before Handler execution.
+
+Default business policy is `required`: failure to reserve the audit path rejects the request before business handling.
 
 Default local storage:
 
 ```text
 versioned event envelope
 → bounded queue
-→ append-only JSON Lines segment
+→ append-only UTF-8 JSON Lines segments
 → atomic manifest/index
-→ retention and recovery
+→ retention and crash recovery
 ```
 
-Default business-request policy is `required`: when record capacity cannot be reserved, new business requests are rejected before handling.
+Durability policies are `buffered`, `flush`, and `fsync`, with no overstatement of guarantees.
 
 Disk states:
 
 ```text
 normal
 → soft watermark: reduce optional detail and accelerate cleanup
-→ hard watermark: not ready and reject required requests
+→ hard watermark: not-ready and reject required requests
 → critical reserve: minimal failure/health/shutdown diagnostics only
 ```
 
-## Telemetry proposal
+Recovery validates storage, rebuilds manifests when needed, truncates incomplete tail lines, quarantines unrecoverable segments, reports estimated loss, and becomes ready only when configured guarantees can be honored.
 
-Logs, traces, diagnostics, and records share names such as:
+## Confirmed telemetry model
+
+Logs, traces, diagnostics, and Runtime Records share names for timestamp, component, event, severity, outcome, framework/revision/worker/request/trace/operation identifiers, route, HTTP result, error code, retryability, cancellation reason, and duration.
+
+Redaction classes:
 
 ```text
-timestamp
-component
-event
-severity
-outcome
-framework_version
-revision_id
-worker_id
-connection_id
-request_id
-record_id
-trace_id
-operation_id
-route_name
-http_method
-http_status
-error_code
-retryable
-cancellation_reason
-duration_ns
+public
+internal
+sensitive
+secret
 ```
 
-High-cardinality IDs, raw paths, users, tenants, and exception text are prohibited as metric labels.
+High-cardinality IDs, raw paths, raw exception messages, and user/tenant identifiers are prohibited as default metric labels.
+
+## Hardening integration status
+
+`docs/architecture/P0_HARDENING_CHECKLIST.md` is now a Verified integration mapping. It no longer acts as an independent design source. The Blueprint and accepted ADRs remain authoritative.
 
 ## Intentionally deferred
 
-- exact numeric limits and retention durations;
+- exact numeric defaults, retention, rotation, and fsync frequency;
 - configuration file syntax and secret providers;
-- multi-Worker reload transport/consensus;
-- forms, multipart, uploads, compression, and streaming formats;
-- concrete logging, metrics, tracing, database, and object-storage backends;
-- OpenTelemetry integration;
+- multi-Worker reload coordination;
+- form, multipart, uploads, compression, and streaming formats;
+- concrete logging, metrics, tracing, database, or object-storage backends;
+- official OpenTelemetry integration;
+- public server/CLI contract;
 - Python/platform support and build backend;
-- public run/serve and CLI behavior;
-- official business capabilities;
-- release and governance policy.
+- official capabilities and extensions;
+- release and public governance policy.
+
+## Next decision
+
+P0-D6 should define:
+
+- public startup/serve boundary;
+- CLI command model and application discovery;
+- production/development execution and reload boundary;
+- Worker/process options, signals, and exit codes;
+- minimum Python and supported platform matrix;
+- build backend and version source;
+- console entry point, package metadata, and CI matrix;
+- packaging and startup acceptance tests.
 
 ## Verification
 
-Review must verify:
+P0-D5 added architecture and governance documentation only. No production source, package skeleton, runtime dependency, implementation, or publishing configuration was created.
 
-- internal IDs cannot be replaced by external input;
-- error codes are stable and client output is safe;
-- secrets cannot leak through any output path;
-- configuration reload cannot be partially visible;
-- JSON handling is strict and bounded;
-- no request enters business handling without the required Runtime Record reservation;
-- disk-full and recovery behavior is explicit;
-- high-cardinality identifiers never become metric labels;
-- P1 remains blocked.
-
-## Next action
-
-Review and merge the P0-D5 decision Pull Request only if these hardening contracts are accepted. Do not start production implementation.
+P1 remains blocked.
