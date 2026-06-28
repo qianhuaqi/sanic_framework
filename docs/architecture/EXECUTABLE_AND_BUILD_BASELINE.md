@@ -1,63 +1,35 @@
 # LingShu Executable and Build Baseline
 
-- Status: Proposed for P0-D6
-- Decision Issue: #46
+- Status: Accepted through P0-D6
+- Decision Issue: #46 (completed)
+- Pull Request: #47
+- Effective merge commit: `5f89572398cee509b9571ee1fe8c20bd2f71dfeb`
 - Parent Issue: #25
 - Related ADR: `docs/decisions/ADR-006-executable-cli-support-and-build-baseline.md`
 
-## 1. Purpose
-
-This document turns P0-D6 into an implementation-ready contract without creating production files.
-
-It defines:
-
-- public single-Worker Server APIs;
-- CLI command and target discovery behavior;
-- multi-Worker Supervisor ownership;
-- development reload boundaries;
-- signal, readiness, and exit-code semantics;
-- Python and platform support;
-- build backend, version, metadata, artifacts, and CI gates.
-
-## 2. Ownership map
+## 1. Ownership map
 
 ```text
 Application
   routes, middleware, extensions, configuration revision, lifecycle plan
 
 Server
-  one Worker runtime, one event loop, listeners/transports, protocol execution, drain
+  one Worker runtime, one event loop, listener/transport, protocol execution, readiness, drain
 
 Supervisor
-  processes, shared listener binding, Worker readiness, restart budget, signals, exit
+  process spawn, one-time listener binding/transfer, Worker readiness, restart budget, signals, exit
 
 CLI
-  arguments, target specification, overrides, Supervisor setup, diagnostics, terminal exit
+  arguments, target specification, configuration overrides, Supervisor setup, diagnostics, terminal exit
 ```
 
-No layer bypasses accepted Kernel, Runtime, configuration, Record, or shutdown contracts.
+Application does not supervise processes. Kernel does not import Server.
 
-## 3. Public `lingshu.server` surface
+## 2. Public single-Worker Server surface
 
 ```python
 from lingshu.server import Server, ServerConfig, serve
 ```
-
-### `ServerConfig`
-
-An immutable validated value object for one-Worker server configuration. It contains endpoint and bounded shutdown/runtime options after configuration merging.
-
-### `Server`
-
-Conceptual lifecycle:
-
-```text
-CREATED → STARTING → RUNNING → DRAINING → STOPPING → STOPPED
-                         ↘                    ↑
-                          FAILED ─────────────┘
-```
-
-Conceptual usage:
 
 ```python
 server = Server(app, ServerConfig(host="127.0.0.1", port=8000))
@@ -65,56 +37,42 @@ await server.start()
 await server.wait_closed()
 ```
 
-Rules:
-
-- one Worker and one event loop;
-- `start()` freezes the Application before binding;
-- failed freeze or startup performs bounded reverse cleanup;
-- no process spawning;
-- no global signal installation by default;
-- close/drain is idempotent;
-- startup cannot be repeated after terminal stop;
-- readiness becomes true only after application/resources/record policy are ready.
-
-### `serve`
-
 ```python
 serve(app, host="127.0.0.1", port=8000)
 ```
 
-Blocking convenience wrapper:
+Rules:
 
-- owns the event loop;
-- installs portable main-thread signals;
-- blocks until clean or forced shutdown;
-- rejects use from a running event loop;
-- remains single-Worker;
-- returns normally only for a clean shutdown and otherwise raises/maps an explicit startup/runtime failure.
+- Server/serve are single-Worker;
+- ServerConfig is immutable and validated before binding;
+- Application freeze precedes listener creation;
+- failed startup performs reverse cleanup and leaves no partial listener state;
+- programmatic Server installs no global signals by default;
+- serve owns an event loop and supported main-thread signals and rejects use from a running loop;
+- drain/close is idempotent;
+- multi-Worker Supervisor remains CLI/internal initially;
+- root exports remain `LingShu`, `Request`, `Response`, and `HTTPException`.
 
-## 4. CLI entry points
+## 3. CLI
 
-Equivalent launch forms:
+Equivalent entry points:
 
 ```text
 lingshu ...
 python -m lingshu ...
 ```
 
-Minimum commands:
+Initial commands:
 
-### `lingshu run TARGET`
+```text
+lingshu run TARGET
+lingshu check TARGET
+lingshu version
+```
 
-Starts one or more Workers and serves traffic.
+`check` validates/imports/freezes without binding or accepting traffic. `version` does not import user application code.
 
-### `lingshu check TARGET`
-
-Imports the target, builds the Application Revision, validates configuration/extensions/routes/middleware, freezes it, and exits without opening a listener.
-
-### `lingshu version`
-
-Prints installed LingShu version, Python runtime, and platform support status. It does not import user application code.
-
-## 5. Target grammar
+## 4. Target grammar
 
 ```text
 module:attribute
@@ -134,42 +92,15 @@ app.py:app
 project.api:create_app()
 project.api:container.app
 project.api:apps[0]
-project.api:lambda
+arbitrary expressions
+implicit module scanning
 ```
 
-Validation:
+Without `--factory`, target is a LingShu instance. With `--factory`, target is a synchronous zero-argument callable returning LingShu. Each Worker imports its own target.
 
-- module consists of normal dotted identifiers;
-- attribute is one identifier;
-- no evaluation or implicit calls;
-- no module scanning or fallback names;
-- import and type errors are different outcomes;
-- instance mode requires `LingShu`;
-- factory mode requires synchronous zero-argument callable returning `LingShu`.
+## 5. Run options and profiles
 
-## 6. Target import and Worker isolation
-
-For multi-Worker CLI execution:
-
-```text
-Supervisor
-  parses target text and configuration sources
-  binds listener
-  spawns Workers
-
-Each Worker
-  imports module
-  resolves instance/factory
-  validates and freezes Application
-  starts one event loop/runtime
-  reports RevisionId + readiness
-```
-
-The Supervisor does not construct mutable Application state and then rely on process inheritance. Every Worker independently arrives at the same validated RevisionId.
-
-## 7. Run command options
-
-Baseline option contract:
+Initial options:
 
 ```text
 --factory
@@ -184,15 +115,7 @@ Baseline option contract:
 --log-level
 ```
 
-Rules:
-
-- CLI values are higher precedence than file/environment sources and lower than explicit programmatic overrides only when such an embedding layer exists;
-- values pass through the same schema validation as all other sources;
-- unknown or contradictory options fail before binding;
-- effective configuration can be displayed with source information under redaction rules;
-- numeric defaults are deferred to tuning, not hidden inside CLI parsing.
-
-## 8. Execution profiles
+Profiles:
 
 ```text
 production
@@ -200,157 +123,109 @@ development
 test
 ```
 
-- `run` defaults to production;
-- `--reload` selects development;
-- profile defaults remain schema-validated;
-- development-only behavior never silently appears in production;
-- test profile is used through controlled testing utilities and is not a production deployment profile.
+`run` defaults to production. `--reload` explicitly selects development. All values use ADR-005 schema/precedence rules.
 
-## 9. Development reload
+## 6. Development reload
 
 ```text
 watcher parent
 └─ one child Worker
 ```
 
-- only one Worker;
-- process restart, not module reload;
-- file changes debounced/coalesced;
-- old child receives bounded graceful stop;
-- replacement imports from a clean process;
-- no zero-downtime production guarantee;
-- excludes VCS, virtual environments, caches, build outputs, records, and configured paths;
-- separate from revision-based production configuration reload.
+Reload is process replacement, not in-process module reload and not production configuration-revision reload.
 
-`--reload --workers 2` or greater is a validation error.
+- one Worker only;
+- multi-Worker reload fails before startup;
+- changes are debounced/coalesced;
+- old child receives bounded stop;
+- VCS, environments, caches, build output, records, and configured exclusions are ignored;
+- no production zero-downtime guarantee.
 
-## 10. Supervisor and process start
+## 7. Multi-Worker process model
 
-Cross-platform baseline:
+Cross-platform semantic baseline:
 
 ```text
 spawn
 ```
 
-The semantic model is the same across Linux, Windows, and macOS.
+- Supervisor does not pass inherited mutable Application state;
+- each Worker imports, validates/freezes, starts one loop/runtime, and reports RevisionId/readiness;
+- all required Workers must report one RevisionId;
+- deterministic import/configuration/freeze failures are startup failures, not restart loops;
+- unexpected exits use ADR-002 restart budgets.
 
-Supervisor duties:
-
-1. parse and validate CLI/options;
-2. load non-application configuration sources;
-3. bind listeners once;
-4. spawn required Workers;
-5. collect RevisionId/startup diagnostics;
-6. wait for required readiness;
-7. manage restart budget;
-8. coordinate drain and hard stop;
-9. return one stable exit code.
-
-Deterministic import/configuration/freeze failures do not enter a restart loop.
-
-## 11. Listener distribution
+## 8. Listener ownership
 
 ```text
 Supervisor binds once
-→ explicit socket handle/descriptor transfer
+→ explicit descriptor/handle transfer
 → Workers accept from transferred listener
 ```
 
-Properties:
+No Worker bind race and no correctness dependency on `SO_REUSEPORT`. Ephemeral port selection occurs once. Single-Worker Server binds directly.
 
-- no independent port-bind race;
-- no reliance on `SO_REUSEPORT` for correctness;
-- port `0` resolves once;
-- transfer mechanism is private and platform-specific;
-- listener withdrawal is part of stop-admission;
-- programmatic single-Worker Server binds directly.
+## 9. Readiness
 
-## 12. Readiness model
-
-Supervisor ready requires:
+Ready requires:
 
 ```text
 listener bound
-AND required Worker count alive
-AND all Workers report same RevisionId
-AND Application/extensions ready
-AND Runtime Record required policy available
+AND required Workers alive
+AND identical RevisionId
+AND required Application/extensions/resources ready
+AND required Runtime Record policy available
 AND no fatal startup error
 ```
 
-Not-ready states include startup, partial rollout, reload replacement, hard disk watermark, degraded configuration, and insufficient required Workers.
+Startup, partial rollout, development replacement, hard disk watermark, degraded configuration, and insufficient Workers are not-ready. Liveness is separate.
 
-Liveness and readiness remain distinct.
-
-## 13. Signal model
-
-Portable expected behavior:
+## 10. Signals and exit codes
 
 ```text
-first SIGINT/SIGTERM or Ctrl+C
-→ graceful drain
-
-second termination request
-→ hard stop
-
-graceful timeout
-→ hard stop
+first termination → graceful drain
+second termination → hard stop
+graceful timeout → hard stop
 ```
 
-- Supervisor owns process signals;
-- programmatic Server installs signals only by explicit request in main thread;
-- unsupported platform signals are not promised;
-- SIGHUP configuration reload remains deferred;
-- termination cause is recorded even when shell status varies by platform.
-
-## 14. Exit codes
+CLI/Supervisor owns process signals. Unix SIGINT/SIGTERM and interactive Windows Ctrl+C are supported according to platform capability. SIGHUP reload remains deferred.
 
 | Code | Meaning |
 |---:|---|
 | 0 | clean shutdown or successful check/version |
 | 1 | uncategorized command failure |
 | 2 | CLI usage/argument error |
-| 3 | application import, discovery, or type error |
-| 4 | configuration, validation, freeze, or extension-start failure |
-| 5 | bind or platform startup failure |
-| 6 | fatal Worker failure or restart budget exhausted |
-| 7 | graceful shutdown timeout / forced hard stop |
+| 3 | application import/discovery/type error |
+| 4 | configuration/validation/freeze/extension startup error |
+| 5 | listener/platform startup error |
+| 6 | Worker fatal failure/restart budget exhausted |
+| 7 | graceful timeout/forced hard stop |
 | 8 | required Runtime Record policy unavailable |
-| 70 | unexpected CLI/Supervisor internal defect |
+| 70 | unexpected CLI/Supervisor defect |
 
-Exit-code tests verify both code and safe diagnostic category.
-
-## 15. Python support matrix
+## 11. Python support
 
 ```text
-Runtime implementation: CPython
-Minimum version:        3.12
-Required versions:      3.12, 3.13, 3.14
-Preview version:        3.15 prerelease
-requires-python:        >=3.12
+Implementation:  CPython
+Minimum:         3.12
+Required:        3.12, 3.13, 3.14
+Preview:         3.15 prerelease
+requires-python: >=3.12
 ```
 
-No upper bound is encoded. Preview is visible but non-blocking until promoted after full gates.
+No artificial upper bound. PyPy, free-threaded CPython, 32-bit Python, and other implementations are deferred.
 
-Deferred:
+## 12. Platform tiers
 
-- Python 3.11 and older;
-- PyPy;
-- free-threaded CPython;
-- 32-bit builds;
-- other interpreters.
+Tier 1, release blocking:
 
-## 16. Platform tiers
+```text
+64-bit maintained Linux
+64-bit supported Windows
+64-bit supported macOS
+```
 
-### Tier 1
-
-Release blocking:
-
-- maintained 64-bit Linux;
-- supported 64-bit Windows desktop/server;
-- supported 64-bit macOS.
-
-Required architectures:
+Required architecture coverage:
 
 ```text
 Linux x86_64
@@ -358,20 +233,9 @@ Windows x86_64
 macOS arm64
 ```
 
-### Tier 2
+Linux arm64 and macOS x86_64 are Tier 2 when CI capacity exists.
 
-When CI capacity exists:
-
-```text
-Linux arm64
-macOS x86_64
-```
-
-Tier 2 status is explicit and cannot be advertised as Tier 1 without full release gates.
-
-## 17. Build configuration
-
-Build backend:
+## 13. Build backend and metadata
 
 ```toml
 [build-system]
@@ -379,119 +243,71 @@ requires = ["hatchling>=1.26,<2"]
 build-backend = "hatchling.build"
 ```
 
-Rules:
+- one root `pyproject.toml`;
+- PEP 621 `[project]` metadata;
+- no initial `setup.py`, `setup.cfg`, or dynamic metadata;
+- `name = "lingshu"`;
+- `requires-python = ">=3.12"`;
+- README metadata;
+- License metadata waits for governance decision;
+- runtime dependencies start empty unless separately approved.
 
-- root-level `pyproject.toml` only;
-- standard `[project]` metadata;
-- no `setup.py` or `setup.cfg` initially;
-- no dynamic metadata initially;
-- build-backend change requires architecture review.
+## 14. Version and console entry point
 
-## 18. Project metadata baseline
-
-Conceptual fields:
-
-```toml
-[project]
-name = "lingshu"
-version = "0.0.0"
-requires-python = ">=3.12"
-readme = "README.md"
-```
-
-`0.0.0` is illustrative only; P1/version planning chooses the actual development version.
-
-License metadata is not populated until the license decision. Runtime dependencies begin empty unless approved by a dependency ADR.
-
-## 19. Version source
-
-Single manual source:
+The only manually edited version source is:
 
 ```text
-[project].version in pyproject.toml
+[project].version
 ```
 
-Runtime/CLI lookup:
+Runtime/CLI read installed metadata through:
 
 ```python
 importlib.metadata.version("lingshu")
 ```
 
-Prohibited:
+No duplicate manual `__version__`, component versions, or unapproved SCM dynamic versioning.
 
-- copied manual `__version__` string;
-- separate component versions;
-- tag/version mismatch;
-- silent source-tree fallback in published runtime;
-- SCM-derived dynamic version without a later decision.
-
-## 20. Console script
+Console entry point:
 
 ```toml
 [project.scripts]
 lingshu = "lingshu.cli:main"
 ```
 
-`main()`:
+`python -m lingshu` delegates to the same integer-returning `main()`.
 
-- parses arguments;
-- returns integer status;
-- does not import user code until a command requires it;
-- does not start resources on module import;
-- reaches `SystemExit` only at the outer executable boundary.
+## 15. Artifacts
 
-`lingshu/__main__.py` delegates to the same `main()`.
-
-## 21. Artifact contract
-
-Initial build outputs:
+Initial artifacts:
 
 ```text
-lingshu-<version>-py3-none-any.whl
-lingshu-<version>.tar.gz
+one py3-none-any wheel
+one source distribution
 ```
 
-Wheel includes approved package code/data only.
+Wheel excludes tests, tools, benchmarks, fuzz data, caches, local configuration, Runtime Records, credentials, secrets, and development output. Sdist includes source/metadata needed to rebuild the wheel and accepted public governance material.
 
-Excluded from wheel:
-
-```text
-tests/
-docs source not declared as package data
-tools/
-benchmarks/
-fuzz/
-.git/
-virtual environments
-cache/build output
-local config
-Runtime Records
-credentials/secrets
-```
-
-Sdist includes sufficient source and metadata to rebuild the wheel, README, and accepted governance/license files.
-
-## 22. Packaging acceptance pipeline
+## 16. Packaging verification
 
 ```text
-checkout
-→ isolated wheel + sdist build
-→ inventory/metadata inspection
-→ clean venv
+isolated wheel + sdist build
+→ metadata/inventory inspection
+→ fresh virtual environment
 → non-editable wheel install
-→ change outside checkout
-→ import + CLI + smoke tests
-→ sdist rebuild
-→ metadata/inventory comparison
-→ editable-install developer test
-→ clean uninstall verification
+→ run outside checkout
+→ import/CLI/smoke tests
+→ rebuild wheel from sdist
+→ compare metadata/inventory
+→ separate editable developer test
+→ uninstall verification
 ```
 
-No repository `PYTHONPATH` injection is allowed. CI records artifact hashes.
+Repository `PYTHONPATH` injection is prohibited. CI records artifact hashes.
 
-## 23. CI matrix
+## 17. CI matrix
 
-Pull-request required matrix:
+Required PR matrix:
 
 ```text
 Linux   3.12, 3.13, 3.14
@@ -502,73 +318,38 @@ macOS   3.12, 3.14
 Preview:
 
 ```text
-Linux 3.15 prerelease — visible, non-blocking
+Linux 3.15 prerelease — visible and non-blocking until promoted
 ```
 
-Release candidate expands platform and packaging checks, including listener transfer and signal/shutdown behavior.
+Release candidates include expanded artifact, listener-transfer, signal, and shutdown tests.
 
-## 24. Required implementation tests
+## 18. Required implementation tests
 
-### Programmatic Server
+- Server lifecycle, freeze-before-bind, failed-start cleanup, event-loop/signal restrictions, idempotent close;
+- script and `python -m` parity;
+- strict target grammar and instance/factory validation;
+- no parent mutable Application inheritance;
+- spawn on Tier 1 systems;
+- one Supervisor bind and listener transfer;
+- identical RevisionId readiness;
+- startup failure, restart budget, signal escalation, and exit codes;
+- single-Worker reload and process replacement;
+- Python implementation/version diagnostics;
+- Hatchling metadata and file inventory;
+- version/tag consistency;
+- clean non-editable install outside checkout;
+- forbidden-file exclusion;
+- required matrix and visible preview.
 
-- lifecycle and illegal transitions;
-- freeze before bind;
-- cleanup after failed startup;
-- no implicit signals;
-- `serve` loop/main-thread restrictions;
-- idempotent drain/close.
+## 19. Deferred decisions
 
-### CLI and discovery
-
-- command parity between script and `-m`;
-- strict target grammar;
-- no expression evaluation/scanning;
-- instance/factory validation;
-- distinct import/type/config diagnostics;
-- stable exit codes.
-
-### Processes and network
-
-- spawn on Tier 1 platforms;
-- import once per Worker;
-- no mutable parent Application inheritance;
-- one Supervisor bind;
-- listener transfer;
-- same RevisionId readiness;
-- restart budget and deterministic startup-failure behavior;
-- first/second termination and timeouts.
-
-### Reload
-
-- one Worker only;
-- debounce and exclusion rules;
-- child process replacement;
-- no in-process stale module state.
-
-### Build and compatibility
-
-- Python version/implementation guard;
-- Hatchling build;
-- version metadata consistency;
-- wheel/sdist inventory;
-- clean install outside checkout;
-- console entry points;
-- no forbidden files;
-- required CI matrix and visible preview.
-
-## 25. Deferred decisions
-
-- numeric defaults;
+- actual first development version and numeric defaults;
 - health endpoint paths;
-- SIGHUP and production multi-Worker config coordination;
-- async/parameterized factories;
-- advanced CLI commands;
+- SIGHUP/multi-Worker configuration rollout;
+- advanced CLI and async/parameterized factories;
 - public multi-Worker Supervisor API;
-- PyPy, free-threaded, 32-bit, and extra architectures;
+- PyPy, free-threaded, 32-bit, extra architectures;
 - native extensions/platform wheels;
-- exact OS version floors;
-- license, release publication, signatures, and attestations.
-
-## 26. Acceptance rule
-
-Merging the P0-D6 decision PR accepts ADR-006 and this contract. It does not create the package or authorize P1. Production implementation begins only after the remaining P0 governance/freeze decision and explicit project-lead authorization.
+- exact OS floors;
+- License/public governance;
+- PyPI publication, signing, and attestation.

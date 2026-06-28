@@ -1,16 +1,14 @@
-# LingShu Framework 总体架构设计总纲（P0-RC7）
+# LingShu Framework 总体架构设计总纲（P0-RC8）
 
 - 设计负责人：小顾
 - 产品决策人：多多
 - 状态：P0 候选总纲，尚未最终冻结
 - GitHub Issue：#25
-- 当前决策 Issue：#46
 - 规范仓库：`qianhuaqi/lingshu`
-- 已接受决策：ADR-001、ADR-002、ADR-003、ADR-004、ADR-005
-- 当前提案：ADR-006
+- 已接受决策：ADR-001、ADR-002、ADR-003、ADR-004、ADR-005、ADR-006
 - 决策状态：`docs/architecture/P0_DECISION_STATUS.md`
 
-> 本文件是 LingShu 唯一总体架构入口。只有 Confirmed 内容可以成为实施依据。P0-D6 当前仍是 Proposed；在决策 PR 合并前不得创建生产源码、`pyproject.toml`、CI Workflow 或运行依赖。
+> 本文件是 LingShu 唯一总体架构入口。详细合同位于已接受 ADR 和对应架构文档。P0 最终冻结前，不得创建生产源码、`pyproject.toml`、CI Workflow、运行依赖或发布配置。
 
 ## 1. 项目定位
 
@@ -18,7 +16,15 @@ LingShu 是从零开发、独立实现、自主控制的 Python Web/API Framewor
 
 LingShu 不是 Sanic、FastAPI、Flask、Django、Starlette 或其他上层 Web Framework 的包装、适配层或迁移版本，也不承担旧实现兼容义务。
 
-LingShu 自己定义和控制 Application Kernel、HTTP Runtime、Native Server、Request/Response/Router/Middleware/Streaming、并发/取消/背压/清理、Extension Protocol、Runtime Record、CLI 和测试支持。
+LingShu 自己定义和控制：
+
+- Application Kernel；
+- HTTP Runtime 与 Native Server；
+- Request、Response、Router、Middleware 与 Streaming；
+- 生命周期、并发、取消、清理、容量与背压；
+- Extension Protocol；
+- Request ID 与 Runtime Record；
+- CLI、测试支持和后续生态。
 
 旧实现只保留在：
 
@@ -32,7 +38,7 @@ archive/legacy-sanic-20260628
 b869270e0ec7cbc324d17ef246e39d0873aab14f
 ```
 
-旧源码、测试、依赖、Issue、PR 和 API 只作历史参考，不是新框架基线。
+旧源码、测试、依赖、Issue、PR 和 API 只作历史参考，不是新框架代码基线。
 
 ## 2. 最高原则
 
@@ -40,11 +46,11 @@ b869270e0ec7cbc324d17ef246e39d0873aab14f
 - **机制与政策分离**：认证、租户、权限、数据库、缓存和业务模型不写进 Core。
 - **单向无环依赖**：依赖可机器验证；下层不依赖业务集成、项目代码、测试工具或根 facade。
 - **显式生命周期**：禁止 import 副作用启动任务、建连、打开文件或修改运行状态。
-- **默认隔离与有界**：Scope 隔离；连接、请求、队列、任务、记录和磁盘必须有界。
+- **默认隔离与有界**：Scope 隔离；连接、请求、队列、任务、执行器、记录和磁盘必须有界。
 - **Deadline、取消与清理**：绝对 monotonic Deadline；取消传播；所有退出路径有界清理。
 - **安全优先**：协议歧义拒绝，敏感数据默认不记录，不自造密码学或证书验证。
 
-## 3. ADR-001：单仓库与开发并发（Confirmed）
+## 3. ADR-001：单仓库与开发并发
 
 规范仓库：
 
@@ -52,15 +58,15 @@ b869270e0ec7cbc324d17ef246e39d0873aab14f
 qianhuaqi/lingshu
 ```
 
-- 一个任务对应一个 Issue、一个 writer-prefixed branch、一个主写入者和一个 PR；
-- 并行开发使用独立 worktree/clone、环境、缓存和端口；
-- Issue 声明 write scope、依赖和集成顺序；
+- 一个任务对应一个 Issue、writer-prefixed branch、主写入者和 PR；
+- 并行开发使用独立 worktree/clone、虚拟环境、缓存和端口；
+- Issue 声明写入范围、依赖和集成顺序；
 - 重叠路径或同一公共契约禁止并行；
 - 公共契约先合并；
-- 开发可并行，进入 `main` 串行；
+- 开发可并行，进入 `main` 必须串行；
 - 最终合并权属于项目负责人。
 
-## 4. ADR-002：运行时并发（Confirmed）
+## 4. ADR-002：运行时并发
 
 ```text
 Supervisor
@@ -93,7 +99,7 @@ Supervisor
 - `docs/decisions/ADR-002-runtime-concurrency-model.md`
 - `docs/architecture/RUNTIME_CONCURRENCY_MODEL.md`
 
-## 5. ADR-003：源码、包和组件边界（Confirmed）
+## 5. ADR-003：源码、包和组件边界
 
 ```text
 Repository:          qianhuaqi/lingshu
@@ -131,14 +137,16 @@ cli         → public composition surface
 testing     → public/test-support surfaces
 ```
 
-`lingshu/__init__.py` 是受控 facade，显式 `__all__`；深层 import 默认私有。生产代码不得依赖 testing。打包验收必须在仓库外对非 editable wheel 执行。
+禁止依赖环、下层导入根 facade、生产代码依赖 testing、以及未经批准的跨组件私有导入。
+
+`lingshu/__init__.py` 是受控 facade，使用显式 `__all__`。深层 import 默认私有。可选集成只在激活时加载。
 
 详细文档：
 
 - `docs/decisions/ADR-003-package-source-layout-and-component-boundaries.md`
 - `docs/architecture/PACKAGE_AND_COMPONENT_LAYOUT.md`
 
-## 6. ADR-004：Application Kernel 与请求管线（Confirmed）
+## 6. ADR-004：Application Kernel 与请求管线
 
 根级最小公开 API：
 
@@ -157,7 +165,7 @@ CREATED → CONFIGURING → FROZEN → STARTING → RUNNING
 ```
 
 - Route、Middleware、Exception Mapper、Extension、配置和 Hook 只在 freeze 前注册；
-- freeze 原子发布完整不可变 Application Plan；失败无部分状态；
+- freeze 原子发布完整不可变 Application Plan，失败不发布部分状态；
 - 初始 Handler 是接收一个 Request 的 async callable；
 - Middleware 是 Application/Route 两层确定性洋葱模型；
 - `call_next` 单次且 Scope-bound；
@@ -204,7 +212,7 @@ Commit 后 status/header 不可变且不能创建第二响应。
 - `docs/decisions/ADR-004-application-kernel-request-pipeline-and-public-api.md`
 - `docs/architecture/APPLICATION_KERNEL_AND_REQUEST_PIPELINE.md`
 
-## 7. ADR-005：Hardening Foundations（Confirmed）
+## 7. ADR-005：Hardening Foundations
 
 ### 时间与 ID
 
@@ -242,8 +250,6 @@ Publish 前失败保持旧 Revision；无法安全回滚则进入明确 degraded
 
 ### Serialization
 
-Baseline：
-
 ```text
 text/plain; charset=utf-8
 application/octet-stream
@@ -251,7 +257,7 @@ application/json; charset=utf-8
 application/problem+json; charset=utf-8
 ```
 
-JSON UTF-8、有限、拒绝 duplicate key、NaN/Infinity 和未知对象；datetime/bytes/Decimal/domain type 使用显式 Serializer。415 表示不支持请求类型，406 表示没有可接受响应，禁止 Content Sniffing。
+JSON 使用 UTF-8、有限、拒绝 duplicate key、NaN/Infinity 和未知对象；datetime/bytes/Decimal/domain type 使用显式 Serializer。415 表示不支持请求类型，406 表示没有可接受响应，禁止 Content Sniffing。
 
 ### Runtime Record
 
@@ -273,24 +279,26 @@ Logs、Traces、Diagnostics 和 Records 共享字段与 `public/internal/sensiti
 - `docs/architecture/HARDENING_FOUNDATIONS.md`
 - `docs/architecture/P0_HARDENING_CHECKLIST.md`
 
-## 8. ADR-006：Executable、CLI 与 Build Baseline（Proposed）
+## 8. ADR-006：Executable、CLI 与 Build Baseline
 
-本节只有在 P0-D6 PR 合并后才成为 Confirmed。
+P0-D6 已通过 PR #47 接受，生效提交：
 
-### 8.1 所有权
+```text
+5f89572398cee509b9571ee1fe8c20bd2f71dfeb
+```
+
+### 所有权
 
 ```text
 Application  → routes/middleware/extensions/config revision/lifecycle plan
-Server       → one Worker loop/runtime/listener/protocol/drain
+Server       → one Worker loop/runtime/listener/protocol/readiness/drain
 Supervisor   → spawn/listener transfer/readiness/restart/signals/exit
 CLI          → arguments/target/config override/Supervisor/diagnostics
 ```
 
 Application 不负责进程监督；Kernel 不依赖 Server。
 
-### 8.2 公共单 Worker Server API
-
-文档化公共子包：
+### 公共单 Worker Server API
 
 ```python
 from lingshu.server import Server, ServerConfig, serve
@@ -306,9 +314,9 @@ await server.wait_closed()
 serve(app, host="127.0.0.1", port=8000)
 ```
 
-`Server`/`serve` 只支持单 Worker；多 Worker Supervisor 初期保持 CLI/internal。Root API 不增加 Server 名称。`serve()` 拥有 event loop 和主线程信号，不能在已运行 loop 中调用。
+`Server`/`serve` 只支持单 Worker。多 Worker Supervisor 初期保持 CLI/internal。Root API 不增加 Server 名称。
 
-### 8.3 CLI 与 Target
+### CLI 与 Target
 
 ```text
 lingshu run TARGET
@@ -317,20 +325,15 @@ lingshu version
 python -m lingshu ...
 ```
 
-Target：
+Target 只接受：
 
 ```text
 module:attribute
 ```
 
-```text
-myapp.main:app
-myapp:create_app --factory
-```
+Factory 通过显式 `--factory` 启用同步零参数 callable。禁止文件路径、表达式、调用语法、索引、dotted attribute traversal、隐式扫描和 app 猜测。
 
-禁止文件路径、表达式、调用语法、索引、隐式扫描和 dotted attribute traversal。普通模式必须得到 LingShu 实例；Factory 是同步零参数 callable 并返回 LingShu。
-
-### 8.4 Profile 与 Development Reload
+### Profile 与 Reload
 
 ```text
 production
@@ -340,24 +343,19 @@ test
 
 `run` 默认 production；`--reload` 显式选择 development。
 
-Development Reload 使用一个 Watcher Parent + 一个 Child Worker 的进程替换模型；禁止 in-process module reload，禁止与多 Worker 同时使用，也不等同于 ADR-005 生产配置 Revision Reload。
+Development Reload 使用 Watcher Parent + 单 Child Worker 的进程替换模型。禁止 in-process reload，禁止 multi-Worker reload，也不等同于 ADR-005 生产配置 Revision Reload。
 
-### 8.5 Multi-Worker
+### Multi-Worker、Listener 与 Readiness
 
 - Linux、Windows、macOS 统一以 `spawn` 语义为基线；
-- Supervisor 不依赖 parent-imported mutable Application；
 - 每个 Worker 独立 import、build/freeze Application，启动一个 loop/runtime；
-- required Workers 必须报告相同 RevisionId；
+- required Workers 必须报告同一 RevisionId；
 - deterministic import/config/freeze failure 不进入 restart loop；
-- unexpected runtime exit 使用 ADR-002 restart budget。
+- Supervisor 绑定一次 listener，并显式传递/复制到 Worker；
+- 不依赖 fork 或 `SO_REUSEPORT`；
+- Ready 必须满足 listener bound、required Workers ready、RevisionId 一致、required resources/extensions ready、Runtime Record required policy available。
 
-### 8.6 Listener、Readiness 与 Signal
-
-Supervisor 只绑定一次 listener，并通过平台安全机制显式传递/复制到 Worker；不依赖 `SO_REUSEPORT`，Worker 不竞争 bind。
-
-Ready 必须满足 listener bound、required Workers ready、RevisionId 一致、required extension/resources ready、Runtime Record required policy available。
-
-第一终止信号进入 Graceful Drain；第二信号或 Graceful Timeout 进入 Hard Stop。CLI/Supervisor 拥有进程信号。SIGHUP Reload 延后。
+第一终止信号进入 Graceful Drain；第二信号或 Graceful Timeout 进入 Hard Stop。
 
 Exit Codes：
 
@@ -374,23 +372,21 @@ Exit Codes：
 70 internal CLI/Supervisor defect
 ```
 
-### 8.7 Python 与平台
+### Python 与平台
 
 ```text
-Implementation: CPython
-Minimum:        3.12
-Required:       3.12, 3.13, 3.14
-Preview:        3.15 prerelease
+Implementation:  CPython
+Minimum:         3.12
+Required:        3.12, 3.13, 3.14
+Preview:         3.15 prerelease
 requires-python: >=3.12
 ```
 
 不设置人为上限。PyPy、free-threaded CPython、32-bit 和其他解释器延后。
 
-Tier 1：维护中的 64-bit Linux、支持期内 64-bit Windows、支持期内 64-bit macOS。Required architecture：Linux x86_64、Windows x86_64、macOS arm64。Linux arm64 和 macOS x86_64 在 CI 容量可用时作为 Tier 2。
+Tier 1：维护中的 64-bit Linux、支持期内 64-bit Windows、支持期内 64-bit macOS。Required architecture：Linux x86_64、Windows x86_64、macOS arm64。Linux arm64 和 macOS x86_64 为 Tier 2 when available。
 
-### 8.8 Build 与 Version
-
-Build Backend：
+### Build、Version 与 Artifact
 
 ```toml
 [build-system]
@@ -398,21 +394,11 @@ requires = ["hatchling>=1.26,<2"]
 build-backend = "hatchling.build"
 ```
 
-使用根级 PEP 621 `[project]`；初始不创建 `setup.py`/`setup.cfg`；初始不使用 dynamic metadata。
-
-唯一手工 Version Source：
-
-```text
-[project].version
-```
-
-运行时和 CLI 使用：
-
-```python
-importlib.metadata.version("lingshu")
-```
-
-禁止重复手工 `__version__`、组件独立版本和未决策的 SCM dynamic version。
+- 根级 PEP 621 `[project]`；
+- 初始不创建 `setup.py`、`setup.cfg` 或 dynamic metadata；
+- 唯一手工 Version Source 是 `[project].version`；
+- Runtime/CLI 使用 `importlib.metadata.version("lingshu")`；
+- 禁止重复手工 `__version__` 和组件独立版本。
 
 Console：
 
@@ -420,8 +406,6 @@ Console：
 [project.scripts]
 lingshu = "lingshu.cli:main"
 ```
-
-### 8.9 Artifact 与 CI
 
 初始产物：
 
@@ -442,9 +426,9 @@ Windows 3.12, 3.14
 macOS   3.12, 3.14
 ```
 
-Preview：Linux CPython 3.15 prerelease，结果可见但非阻断，直到通过完整 Gate 后提升为 Required。
+Preview：Linux CPython 3.15 prerelease，结果可见但非阻断。
 
-详细提案：
+详细文档：
 
 - `docs/decisions/ADR-006-executable-cli-support-and-build-baseline.md`
 - `docs/architecture/EXECUTABLE_AND_BUILD_BASELINE.md`
@@ -462,24 +446,31 @@ P0 最终冻结前禁止：
 - 并行修改重叠路径或同一公共契约；
 - 启动 P1。
 
-## 10. P0-D6 延后
+## 10. 下一项：P0-D7 Public Governance、Release Policy 与 Final Freeze
 
-- 实际第一开发版本；
-- numeric defaults 和 health endpoint path；
-- SIGHUP 与 multi-Worker config rollout transport；
-- advanced CLI、async/parameterized factory；
-- public multi-Worker Supervisor API；
-- PyPy、free-threaded、32-bit、extra architectures；
-- native extension/platform wheel；
-- exact OS floors；
-- License、PyPI、签名和 Attestation。
+P0-D7 应决定：
 
-## 11. P0 后续主要事项
+1. License 与 `LICENSE` 文件；
+2. `CONTRIBUTING.md`、Code of Conduct、DCO/CLA 选择；
+3. `SECURITY.md`、漏洞报告渠道、支持版本和响应流程；
+4. `CHANGELOG.md` 与 Release Notes 规则；
+5. SemVer、0.x 兼容性、Deprecation 和 Removal Policy；
+6. Release Branch、Tag、Version Bump、Artifact Publication、Rollback、Signing/Attestation；
+7. 第一个 Development Version 与 P1/v0.x Milestone；
+8. P1 Issue Graph、Write Scope、Dependency 和 Acceptance Matrix；
+9. Blueprint/ADR/状态文件一致性审计；
+10. P0 Final Freeze 与是否明确授权启动 P1。
 
-- License、Contribution、Security、Supported Versions、Changelog、Code of Conduct；
-- Release/Compatibility Policy 与 v0.x/v1.0 规则；
-- P1 implementation scope、Issue 分解和验收矩阵；
-- 最终 P0 Freeze 与多多明确授权启动 P1。
+## 11. 仍待后续实现或决策
+
+- actual numeric defaults 和 health endpoint path；
+- SIGHUP/multi-Worker configuration rollout；
+- advanced CLI/factory forms 与 public Supervisor API；
+- advanced routing/body formats；
+- sync Handler adaptation 与 dependency injection；
+- official capabilities/extensions；
+- HTTP/2、HTTP/3、accelerators、extra runtimes/platforms；
+- native extensions/platform wheels。
 
 ## 12. 决策确认流程
 
@@ -492,9 +483,9 @@ P0 最终冻结前禁止：
 3. 不存在第二份同级总体设计；
 4. Distribution、源码、组件、Kernel、HTTP、Server、Record、CLI、Build 边界确认；
 5. 启动、请求、响应、并发、关闭、崩溃恢复和 Packaging 语义确认；
-6. Public Governance 和 Release Policy 确认；
-7. P1 范围、Issue 分解和验收标准可直接执行；
+6. Public Governance、Security、Compatibility 与 Release Policy 确认；
+7. P1 范围、Issue 图和验收标准可直接执行；
 8. 历史实施 Issue 已关闭或归档；
-9. 多多明确授权启动 P1。
+9. 多多明确冻结 P0 并授权启动 P1。
 
 在此之前，所有开发模型只允许执行 P0 文档与治理工作。

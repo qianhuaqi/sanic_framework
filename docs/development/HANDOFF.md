@@ -3,128 +3,166 @@
 Updated at: 2026-06-28
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Phase: P0-D6 - Executable, CLI, Support Matrix, and Build Baseline
+Phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Parent Issue: #25
-Active decision Issue: #46
-Active decision branch: `human/dodo/phase-p0-d6-executable-build-baseline`
+Active decision Issue: none
+Active decision branch: none
 Baseline: latest accepted `main`
-Status: proposed architecture ready for review
+Status: P0-D6 accepted; awaiting final governance/freeze decision
 
 ## Accepted decisions
 
-- P0-D1: repository and concurrent-development governance through ADR-001 / PR #32.
-- P0-D2: runtime concurrency through ADR-002 / PR #35.
-- P0-D3: package and component layout through ADR-003 / PR #38.
-- P0-D4: Application Kernel and request pipeline through ADR-004 / PR #41.
-- P0-D5: Hardening Foundations through ADR-005 / PR #44.
+- P0-D1: repository and concurrent-development governance — ADR-001 / PR #32.
+- P0-D2: runtime concurrency — ADR-002 / PR #35.
+- P0-D3: package and component layout — ADR-003 / PR #38.
+- P0-D4: Application Kernel and request pipeline — ADR-004 / PR #41.
+- P0-D5: Hardening Foundations — ADR-005 / PR #44.
+- P0-D6: executable, CLI, support matrix, and build baseline — ADR-006 / PR #47.
 
-## P0-D6 proposal completed on this branch
+P0-D6 merge commit:
 
-- Added `ADR-006-executable-cli-support-and-build-baseline.md`.
-- Added `EXECUTABLE_AND_BUILD_BASELINE.md`.
-- Defined ownership among Application, Server, Supervisor, and CLI.
-- Proposed public single-Worker `lingshu.server` APIs: `Server`, `ServerConfig`, and `serve`.
-- Proposed canonical console command `lingshu` and equivalent `python -m lingshu`.
-- Proposed minimum commands `run`, `check`, and `version`.
-- Defined strict `module:attribute` application discovery and explicit `--factory`.
-- Rejected arbitrary expressions, file-path imports, implicit scanning, and factory call syntax.
-- Defined production, development, and test profiles.
-- Defined development reload as single-Worker child-process replacement.
-- Defined cross-platform spawn semantics and per-Worker target import/freeze.
-- Defined Supervisor-owned one-time listener bind and explicit Worker transfer.
-- Defined RevisionId-consistent readiness, signal escalation, and stable exit codes.
-- Proposed CPython >=3.12 with required 3.12/3.13/3.14 and 3.15 prerelease preview.
-- Proposed Tier 1 64-bit Linux, Windows, and macOS.
-- Chose Hatchling as the initial build backend.
-- Chose static `[project].version` as the single version source.
-- Defined console entry point, pure-Python wheel/sdist, clean-install, and CI gates.
-- Added no production source, package skeleton, dependency, or workflow.
+```text
+5f89572398cee509b9571ee1fe8c20bd2f71dfeb
+```
 
-## Proposed public Server usage
+## Confirmed execution ownership
+
+```text
+Application → routes/middleware/extensions/config revision/lifecycle plan
+Server      → one Worker loop/runtime/listener/protocol/readiness/drain
+Supervisor  → processes/listener transfer/readiness/restarts/signals/exit
+CLI         → arguments/target/overrides/Supervisor/diagnostics
+```
+
+Application does not bind sockets or supervise processes. Kernel does not import Server.
+
+## Confirmed public Server API
 
 ```python
 from lingshu.server import Server, ServerConfig, serve
+```
 
+```python
 server = Server(app, ServerConfig(host="127.0.0.1", port=8000))
 await server.start()
 await server.wait_closed()
 ```
 
-Blocking single-Worker convenience:
-
 ```python
 serve(app, host="127.0.0.1", port=8000)
 ```
 
-The root facade remains:
+Server/serve are single-Worker. Multi-Worker Supervisor remains CLI/internal. Root exports stay limited to `LingShu`, `Request`, `Response`, and `HTTPException`.
 
-```python
-from lingshu import LingShu, Request, Response, HTTPException
-```
-
-## Proposed CLI
+## Confirmed CLI and discovery
 
 ```text
 lingshu run myapp.main:app
 lingshu run myapp:create_app --factory
 lingshu check myapp.main:app
 lingshu version
-python -m lingshu version
+python -m lingshu ...
 ```
 
-Target import is explicit and deterministic. Each spawned Worker imports and freezes its own Application and reports RevisionId/readiness.
+Target grammar is strict `module:attribute`. Factory is synchronous, zero-argument, and returns LingShu. Arbitrary expressions, calls, file paths, implicit scanning, and dotted attribute traversal are prohibited.
 
-## Proposed multi-Worker model
+## Confirmed process model
 
 ```text
 CLI
 └─ Supervisor
    ├─ bind listener once
-   ├─ spawn Worker 1 → import/freeze/start
-   ├─ spawn Worker 2 → import/freeze/start
-   └─ report ready only when required Workers share one RevisionId
+   ├─ spawn Worker → import/freeze/start
+   ├─ transfer listener explicitly
+   └─ ready only when required Workers share one RevisionId
 ```
 
-Correctness does not depend on fork inheritance or `SO_REUSEPORT`.
+Correctness does not depend on fork inheritance or `SO_REUSEPORT`. Development reload is single-Worker process replacement, not in-process reload or production configuration revision reload.
 
-## Proposed support/build baseline
+## Confirmed readiness, signals, and exit
+
+Ready requires listener bind, required Worker count, identical RevisionId, ready required resources/extensions, available required Runtime Record policy, and no startup fatal condition.
+
+First termination requests graceful drain. Second termination or graceful timeout requests hard stop.
+
+```text
+0  clean/success
+1  generic failure
+2  CLI usage
+3  app import/discovery/type
+4  config/validation/freeze/extension startup
+5  listener/platform startup
+6  Worker fatal/restart budget
+7  graceful timeout/hard stop
+8  required Runtime Record unavailable
+70 internal CLI/Supervisor defect
+```
+
+## Confirmed support/build baseline
 
 ```text
 CPython minimum: 3.12
 Required:        3.12, 3.13, 3.14
 Preview:         3.15 prerelease
-Platforms:       Tier 1 64-bit Linux, Windows, macOS
+Tier 1:          64-bit Linux, Windows, macOS
 Build backend:   Hatchling
-Version source:  [project].version
+Metadata:        PEP 621
+Version source:  static [project].version
 Console script:  lingshu = "lingshu.cli:main"
 Artifacts:       py3-none-any wheel + sdist
 ```
 
-## Intentionally deferred
+No initial `setup.py`, `setup.cfg`, dynamic metadata, duplicate `__version__`, PyPy/free-threaded/32-bit support claim, or native wheel.
 
-- actual implementation and files;
+## Confirmed packaging gate
+
+```text
+isolated build
+→ metadata/inventory inspection
+→ fresh venv
+→ non-editable wheel install
+→ run outside checkout
+→ import/CLI/smoke
+→ rebuild from sdist
+→ compare metadata/inventory
+→ separate editable test
+→ uninstall verification
+```
+
+Required CI:
+
+```text
+Linux   3.12, 3.13, 3.14
+Windows 3.12, 3.14
+macOS   3.12, 3.14
+Preview Linux 3.15 prerelease
+```
+
+## Deferred
+
 - actual first development version;
 - License and public governance;
 - numeric defaults and health endpoint paths;
-- production SIGHUP/multi-Worker config coordination;
-- advanced CLI and factory forms;
-- PyPy, free-threaded, 32-bit, and native extensions;
-- PyPI release, signatures, and attestations.
+- SIGHUP/multi-Worker configuration rollout;
+- advanced CLI/factory forms and public Supervisor API;
+- extra runtimes/platforms and native extensions;
+- PyPI publication, signing, and attestations.
+
+## Next decision
+
+P0-D7 should finalize:
+
+- License and required governance files;
+- contribution and code-of-conduct policy;
+- security disclosure and supported-version policy;
+- changelog/release-note/compatibility/deprecation rules;
+- tags, branches, version bumps, publication and rollback;
+- first development version and P1 milestone mapping;
+- executable P1 Issue graph and acceptance matrix;
+- final Blueprint audit, P0 freeze, and explicit P1 authorization.
 
 ## Verification
 
-Review must verify:
+P0-D6 added architecture documentation only. No production source, `pyproject.toml`, workflow, dependency, implementation, or publishing configuration was created.
 
-- Application does not become a process supervisor;
-- Server remains single-Worker and Supervisor remains CLI/internal initially;
-- target strings cannot execute arbitrary expressions;
-- each Worker independently imports and freezes the same Revision;
-- reload cannot be enabled with multiple Workers;
-- listener bind and signal ownership are unambiguous;
-- version is not duplicated;
-- artifacts are tested outside checkout;
-- P1 remains blocked.
-
-## Next action
-
-Review and merge the P0-D6 decision Pull Request only if the execution and build baseline is accepted. Do not create production files or begin P1.
+P1 remains blocked.
