@@ -11,10 +11,10 @@ jobs:
     if: github.head_ref == 'human/dodo/p1-04-http-value-model'
     runs-on: ubuntu-latest
     steps:
-      - name: Clone and run concise Ruff
+      - name: Clone and show import fixes
         shell: bash
         run: |
           git clone -q --depth=1 --branch "$GITHUB_HEAD_REF" "https://github.com/$GITHUB_REPOSITORY.git" source
           cd source
           python -m pip install -q "ruff>=0.8,<1"
-          ruff check lingshu/http tests/http tests/test_package_baseline.py --output-format=concise
+          ruff check lingshu/http tests/http tests/test_package_baseline.py --select I --fix --diff
