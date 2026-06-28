@@ -2,113 +2,128 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0-D7 - Public Governance, Release Policy, and Final Freeze Candidate
-Phase type: non-implementation architecture and governance
-Accepted baseline: latest accepted `main`
-Active decision branch: `human/dodo/phase-p0-d7-governance-freeze`
-Active decision Issue: #49
-Parent architecture Issue: #25
-Status: proposed final P0 decision under project-lead review
-Next phase allowed: no
+Current phase: P1 - Single-Worker Minimum Vertical Slice
+Authorization event: project-lead merge of PR #51
+Authoritative P0 freeze commit: merge commit of PR #51
+Phase status on `main`: P1 Authorized
+Active implementation Issue: none until PR #51 merges
+First authorized Issue: P1-00
+P1 planned version: `0.1.0.dev0`
+Parent P0 Issue: #25 (closed by PR #51)
+Final P0 decision Issue: #49 (closed by PR #51)
 
-## Completed technical decisions
+> This phase transition is effective only when PR #51 reaches `main`. While PR #51 remains open, production work and executable P1 Issues remain blocked.
 
-- P0-D1: repository and concurrent-development governance — ADR-001 / PR #32.
-- P0-D2: runtime concurrency — ADR-002 / PR #35.
-- P0-D3: package and component layout — ADR-003 / PR #38.
-- P0-D4: Application Kernel and request pipeline — ADR-004 / PR #41.
-- P0-D5: Hardening Foundations — ADR-005 / PR #44.
-- P0-D6: executable, CLI, support matrix, and build baseline — ADR-006 / PR #47.
+## P0 result
 
-## Active proposal: P0-D7
-
-P0-D7 proposes:
+P0 is frozen through:
 
 ```text
-License:           Apache-2.0
-Contribution:      DCO 1.1, Signed-off-by, no initial CLA
-Conduct:           Contributor Covenant 2.1 adaptation
-Security:          private vulnerability reporting and supported-version rules
-Versioning:        SemVer 2.0.0 with stricter 0.x compatibility
-First P1 version:  0.1.0.dev0
-Branch model:      main only as long-lived branch
-Release:           tag-driven CI artifacts, immutable releases, trusted publication
-P1:                single-Worker minimum vertical slice
+ADR-001  repository and concurrent-development governance
+ADR-002  runtime concurrency and graceful shutdown
+ADR-003  package/source/component boundaries
+ADR-004  Application Kernel and request pipeline
+ADR-005  hardening foundations
+ADR-006  executable/CLI/support/build baseline
+ADR-007  public governance, compatibility, release, and P0 freeze
 ```
 
-Files added by the proposal:
+Authoritative documents:
 
-- `LICENSE`;
-- `NOTICE`;
-- `DCO`;
-- `CONTRIBUTING.md`;
-- `SECURITY.md`;
-- `CODE_OF_CONDUCT.md`;
-- `CHANGELOG.md`;
+- `docs/architecture/LINGSHU_FRAMEWORK_BLUEPRINT.md`;
+- `docs/architecture/P0_FINAL_FREEZE.md`;
+- `docs/architecture/P0_DECISION_STATUS.md`;
+- accepted ADRs;
 - `docs/governance/RELEASE_AND_COMPATIBILITY_POLICY.md`;
-- `docs/development/P1_IMPLEMENTATION_PLAN.md`;
-- `docs/decisions/ADR-007-public-governance-release-and-p0-freeze.md`.
+- `docs/development/P1_IMPLEMENTATION_PLAN.md`.
 
-## Proposed compatibility rules
+## P1 objective
 
-Before 1.0:
-
-- patch releases remain compatible inside one minor line;
-- breaking public changes require a new minor release;
-- breaking changes require changelog and migration guidance;
-- removal should normally follow at least one released minor of deprecation.
-
-After 1.0:
-
-- breaking changes require a major release;
-- normal removal requires two minor releases and 180 days of deprecation;
-- security/data-corruption/protocol emergencies may use a documented narrow exception.
-
-## Proposed P1 scope
-
-P1 is limited to an installable single-Worker vertical slice:
+Build the first independently implemented, installable, tested LingShu vertical slice:
 
 ```text
-package/CI foundation
-→ core identifiers/time/errors/config
-→ runtime Scope/Deadline/cancellation/admission
-→ HTTP Request/Response/body
+package + CI
+→ core primitives
+→ runtime scopes
+→ HTTP model
 → Router/Middleware
-→ Application Kernel/freeze
+→ Application Kernel
 → minimum Runtime Record
-→ native single-Worker HTTP/1.1 Server
+→ single-Worker HTTP/1.1 Server
 → CLI version/check/run --workers 1
 → clean wheel/sdist verification
 ```
 
-Multi-Worker Supervisor, reload, advanced streaming/body formats, official extensions, and public package-index release remain outside P1.
+P1 is an implementation proof of the frozen architecture. It is not a public stable release and does not authorize production-readiness claims.
 
-## Freeze gate
+## First authorized action
 
-Merging the P0-D7 decision PR will create a P0 Freeze Candidate only.
+After PR #51 merges, create only:
 
-P1 remains blocked until a separate Final Freeze PR:
+```text
+P1-00：建立 package、tooling、CI 与治理门禁基础
+```
 
-1. marks ADR-007 Accepted;
-2. marks the Blueprint Frozen;
-3. closes parent Issue #25;
-4. records the final P0 commit;
-5. changes the phase to P1 authorized;
-6. explicitly authorizes creation of production package files and P1 Issues.
+P1-00 must:
 
-## Current objective
+- use the PR #51 merge commit as `base_commit`;
+- use one writer-prefixed branch, one primary writer, one isolated environment, and one PR;
+- create `pyproject.toml`, the initial no-`src/` `lingshu/` package skeleton, initial `tests/` harness, tooling configuration, and CI workflows only inside its declared scope;
+- set the development version to `0.1.0.dev0`;
+- use Hatchling, PEP 621, Apache-2.0 metadata, and the accepted console-entry baseline;
+- establish package inventory and clean-install gates;
+- avoid implementing framework behavior assigned to P1-01 and later.
 
-- review License, DCO, conduct, and security policies;
-- review 0.x/1.x compatibility and release rules;
-- review P1 scope, dependency graph, write scopes, and acceptance matrix;
-- verify governance files do not conflict;
-- open a documentation/governance Pull Request;
-- keep production implementation blocked.
+## P1 dependency order
 
-## Prohibited until Final Freeze
+```text
+P1-00 package/tooling/CI
+→ P1-01 core primitives
+→ P1-02 static configuration
+→ P1-03 runtime
+→ P1-04 HTTP model
+→ P1-05 Router/Middleware
+→ P1-06 Application Kernel
+→ P1-07 Runtime Record
+→ P1-08 single-Worker Server
+→ P1-09 CLI
+→ P1-10 final integration
+```
 
-- creating `pyproject.toml`, `lingshu/`, `tests/`, examples, or CI workflows;
-- adding runtime/build dependencies to the actual project;
-- implementing framework code;
-- opening executable P1 implementation Issues;
-- publishing artifacts.
+Limited parallel work is allowed only where `P1_IMPLEMENTATION_PLAN.md` explicitly permits it and consumed provider contracts are already merged.
+
+## P1 scope
+
+Authorized:
+
+- package/tooling/CI foundation;
+- core time, identifiers, errors, safe details, and static configuration;
+- Scope, Deadline, cancellation, structured tasks, cleanup, and admission;
+- HTTP Request, Response, body, Router, and Middleware foundations;
+- Application Kernel, Revision, freeze, and lifecycle;
+- minimum Runtime Record;
+- native single-Worker HTTP/1.1 Server;
+- CLI `version`, `check`, and `run --workers 1`;
+- wheel/sdist and outside-checkout clean-install verification.
+
+Not authorized in P1:
+
+- public PyPI production publication;
+- multi-Worker Supervisor implementation;
+- development or production reload;
+- HTTP/2, HTTP/3, WebSocket, ASGI, or WSGI;
+- advanced streaming, multipart, uploads, or compression;
+- automatic HEAD/OPTIONS, host routing, mounts, or sub-applications;
+- sync Handler adaptation or dependency injection;
+- official Auth, Tenant, RBAC, SQL, Redis, Cache, OpenAPI, Scheduler, Storage, or Observability integrations;
+- changing frozen P0 decisions without a new Issue and ADR.
+
+## Governance remains active
+
+- one task = one Issue = one primary writer = one branch/worktree/environment = one PR;
+- no direct commit to `main`;
+- no shared writable workspace or multi-writer branch;
+- no long-lived `develop`;
+- no auto-merge;
+- DCO sign-off required;
+- final merge authority belongs to the project lead.
