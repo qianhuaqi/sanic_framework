@@ -2,7 +2,8 @@
 
 - Status: Active P0 control document
 - Parent Issue: #25
-- Active decision Issue: none
+- Active decision Issue: #43
+- Active proposal: P0-D5 / ADR-005
 - Last accepted decision: P0-D4 / ADR-004 / PR #41
 - Last updated: 2026-06-28
 
@@ -16,17 +17,18 @@
 
 ## Confirmed
 
-### Project identity
+### Project identity and P0 gate
 
 - LingShu is a new, independently implemented Python Web/API framework.
 - It is not based on another upper-level Web framework.
 - The archived implementation creates no compatibility obligation.
-- Production framework code will be written from scratch.
+- P0 permits architecture and governance only.
+- Production source, dependencies, package skeleton, implementation, and publishing remain blocked.
 
 ### P0-D1: Repository and development concurrency
 
 - Canonical repository: `qianhuaqi/lingshu`.
-- One Issue, writer branch, primary writer, isolated worktree/environment, and Pull Request per concurrent task.
+- One Issue, writer-prefixed branch, primary writer, isolated worktree/environment, and Pull Request per task.
 - Non-overlapping write scopes and provider-first integration.
 - Parallel development with serial integration into `main`.
 
@@ -35,9 +37,9 @@
 - Standard-library `asyncio` behavior is the correctness baseline.
 - One event loop and Application Runtime per Worker.
 - Structured Supervisor → Worker → Application → Connection → Request → Operation ownership.
-- Request-owned child tasks and no unregistered fire-and-forget tasks.
+- Request-owned child tasks; unregistered fire-and-forget tasks prohibited.
 - One active HTTP/1.1 request per connection.
-- Bounded admission, queues, executors, telemetry, and Runtime Records.
+- Bounded admission, queues, buffers, executors, dependencies, telemetry, and records.
 - Absolute monotonic Deadline and cancellation propagation.
 - Blocking-work isolation, bounded Worker restart, and ordered graceful shutdown.
 
@@ -52,8 +54,6 @@ Production code: lingshu/
 src layout:      prohibited
 ```
 
-Confirmed direction:
-
 ```text
 runtime     → core
 http        → runtime + core
@@ -64,110 +64,158 @@ cli         → public composition surface
 testing     → public/test-support surfaces
 ```
 
-Additional rules:
-
-- one framework version and release cadence;
-- no initial component distributions;
-- no dependency cycles;
-- production does not depend on `testing`;
-- controlled root public facade;
-- lazy optional integrations;
-- default Runtime Record mechanisms with optional heavy exporters;
-- wheel and sdist isolated-install quality gate.
+One version/release cadence, no initial component distributions, controlled public facade, lazy optional integrations, and isolated wheel/sdist installation tests are confirmed.
 
 ### P0-D4: Application Kernel and request pipeline
 
-- ADR-004 accepted.
-- Issue #40 completed.
-- PR #41 merged at `bb78918dc2bc92dd49c34258e3707abd37274f12`.
-- Detailed model: `docs/architecture/APPLICATION_KERNEL_AND_REQUEST_PIPELINE.md`.
+- ADR-004 accepted; Issue #40 completed; PR #41 merged.
+- Public `LingShu` composition root and private low-level Kernel.
+- Lifecycle `CREATED → CONFIGURING → FROZEN → STARTING → RUNNING → DRAINING → STOPPING → STOPPED`.
+- Registration only before freeze; immutable Application Revision and atomic Plan publication.
+- Async Handler with explicit Request.
+- Deterministic application/route Middleware onion ordering and single-use `call_next`.
+- Fixed request pipeline from protocol acceptance through Scope cleanup.
+- Immutable Request metadata, scoped state, and bounded single-consumer body.
+- Exactly-once return normalization.
+- Response states `NEW → PREPARED → COMMITTED → COMPLETED/ABORTED`.
+- No response replacement after commit.
+- Deterministic exception resolution.
+- Extensions compile before startup and cannot mutate running registries.
+- Root exports `LingShu`, `Request`, `Response`, and `HTTPException`.
 
-Confirmed semantics:
+### Request-level audit invariant
 
-- public `LingShu` composition root and private low-level Application Kernel;
-- lifecycle `CREATED → CONFIGURING → FROZEN → STARTING → RUNNING → DRAINING → STOPPING → STOPPED`;
-- registration only before freeze;
-- immutable Application Revision and atomic compiled-plan publication;
-- no partial plan after freeze failure;
-- immutable compiled Router and deterministic conflict validation;
-- asynchronous Handler with one explicit Request;
-- deterministic application and route Middleware onion ordering;
-- single-use Scope-bound `call_next`;
-- fixed request pipeline from protocol acceptance through Scope cleanup;
-- immutable Request metadata, scoped state, and bounded single-consumer body;
-- exactly-once Handler return normalization;
-- `Response`, `str`, and bytes-like initial Handler results;
-- `None`, tuple magic, arbitrary iterators, and unknown values rejected by default;
-- Response states `NEW → PREPARED → COMMITTED → COMPLETED/ABORTED`;
-- no status/header mutation or replacement response after commit;
-- exception resolution through route mapper, application mapper, `HTTPException`, then safe default before commit;
-- extensions compiled before startup and immutable during request processing;
-- root public exports `LingShu`, `Request`, `Response`, and `HTTPException`;
-- state-machine, ordering, ownership, commit, error, leak, and import-side-effect tests required.
+Every admitted business request must have an internal Request ID and a bounded, redacted, recoverable Runtime Record. Exact hardening semantics are proposed by P0-D5.
 
-### Repository reset, compatibility, and P0 gate
+## Proposed — P0-D5, not executable until merged
 
-- Legacy implementation is historical reference only.
-- No Sanic adapter, migration layer, or legacy API forwarding package is required before v1.0.
-- P0 permits architecture and governance only.
-- No production package, source tree, runtime dependency, or implementation phase begins before P0 acceptance.
-- Every accepted request has an internal Request ID and bounded, redacted, recoverable Runtime Record.
+Issue #43 and ADR-005 propose:
+
+### Time and identifiers
+
+- UTC RFC3339 wall time for display/cross-process correlation;
+- monotonic nanosecond time for Deadline/duration/local ordering;
+- typed opaque 128-bit Request, Connection, Trace, Operation, Worker, and Record IDs;
+- SHA-256 Revision IDs;
+- internal Request ID always generated by LingShu;
+- inbound `X-Request-ID` retained only as untrusted external correlation;
+- valid remote trace context may continue correlation but never grants trust.
+
+### Exceptions and client errors
+
+- stable framework exception categories;
+- stable lowercase dotted error codes;
+- explicit client visibility, retryability, severity, and fatal scope;
+- safe `application/problem+json` envelope;
+- no raw traceback, path, secret, configuration, body, SQL, credential, or internal topology exposure;
+- cancellation remains control flow rather than an ordinary error.
+
+### Configuration
+
+```text
+defaults < file < environment < CLI < programmatic override
+```
+
+- schema-driven normalization and unknown-key failure;
+- explicit schema versions and migrations;
+- dedicated secret values with universal redaction;
+- immutable typed Configuration Snapshot;
+- revision-based reload using validate/prepare/freeze/atomic publish/drain/cleanup;
+- failed pre-publication reload leaves the old Revision unchanged;
+- partial multi-Worker rollout is never reported as success.
+
+### Serialization
+
+- explicit serializer registry compiled at freeze;
+- UTF-8 text, binary, JSON, and problem JSON baselines;
+- strict JSON duplicate-key and NaN/Infinity rejection;
+- bounded bytes, depth, items, string, and number tokens;
+- explicit datetime/base64/Decimal/custom serializers;
+- 415 for unsupported request media type;
+- 406 for no acceptable response representation;
+- no content sniffing or arbitrary-object serialization.
+
+### Runtime Record
+
+- Record reservation before business Handler execution;
+- default business policy `required`;
+- versioned append-only event envelope;
+- per-record event sequence and dual wall/monotonic time;
+- bounded attributes with shared redaction;
+- default append-only UTF-8 JSON Lines segment storage;
+- atomic manifest/index updates;
+- `buffered`, `flush`, and `fsync` durability declarations;
+- event, record, queue, segment, total disk, retention, cleanup, flush, and recovery budgets;
+- soft/hard/critical disk watermarks;
+- bounded crash recovery and quarantine rather than silent deletion.
+
+### Telemetry
+
+- common correlation and outcome fields across logs, traces, diagnostics, and records;
+- shared `public/internal/sensitive/secret` redaction classes;
+- Request/Trace/Record/Operation/Connection IDs and raw paths prohibited as metric labels;
+- bounded metric dimensions based on component, route template/name, method, status class, outcome, and stable error code.
+
+Proposal documents:
+
+- `docs/decisions/ADR-005-hardening-foundations.md`
+- `docs/architecture/HARDENING_FOUNDATIONS.md`
+
+Until the decision PR is merged, these remain Proposed.
 
 ## Rejected
 
 - upper-level Web framework dependency;
-- legacy runtime migration or compatibility shims without released consumers;
-- separate initial repositories or distributions;
-- shared writable worktrees, multi-writer branches, automatic merge, or long-lived `develop`;
-- unbounded tasks, queues, executors, waiters, or mutable global request state;
+- legacy runtime migration or unneeded compatibility shims;
+- separate initial repositories/distributions or `src/lingshu/`;
+- shared writable worktrees, multi-writer branches, automatic merge, or long-lived shared `develop`;
+- unbounded tasks, queues, executors, waiters, records, or disk;
+- mutable global request state;
 - one thread per request;
-- resetting timeout at every nested layer;
-- concurrent HTTP/1.1 requests on one connection in the initial runtime;
-- infinite Worker restart loops or shutdown without drain/cleanup;
+- nested timeout reset;
+- concurrent HTTP/1.1 request execution on one connection;
+- infinite Worker restart or shutdown without cleanup;
 - mandatory third-party event loop for correctness;
-- `src/lingshu/`, initial `packages/`, component-level packaging, or component versions;
-- production dependency on `lingshu.testing`;
-- treating all deep imports as public;
-- editable-only packaging evidence;
+- production dependency on testing helpers;
+- deep imports automatically treated as public;
 - running registry mutation or import-time registration;
 - route conflict resolution by registration order;
-- unordered Middleware or multiple `call_next` calls;
-- implicit sync Handler execution on the event loop;
-- implicit tuple or `None` response magic;
-- mutable Request metadata;
-- multiple Response commits or replacement after commit;
-- per-request mutation of the compiled plan.
+- unordered Middleware, repeated `call_next`, implicit sync Handler execution, tuple/None response magic;
+- mutable Request metadata, multiple commits, or post-commit response replacement;
+- trusting inbound Request IDs as internal IDs;
+- semantic/guessable runtime identifiers;
+- raw exception/traceback exposure;
+- mutable runtime configuration or partial in-place reload;
+- silent schema migration;
+- arbitrary-object or permissive non-finite JSON serialization;
+- unbounded Runtime Record queues/storage;
+- claiming complete audit after record reservation/write failure;
+- using high-cardinality IDs as metric labels;
+- wall-clock time for Deadline measurement.
 
 ## Candidate — not executable
 
-### Recommended next decision: P0-D5 hardening foundations
+### Deferred by P0-D5
 
-- identifier formats and correlation for Request, Connection, Trace, Operation, Worker, Revision, and Runtime Record;
-- exception taxonomy, stable error codes, safe client messages, redaction, and cause chains;
-- configuration sources, precedence, validation, immutability, versioning, reload, and rollback;
-- JSON/general serialization and content-negotiation baseline;
-- Runtime Record event envelope, file/storage format, budgets, retention, disk safety, failure mode, and crash recovery;
-- common telemetry fields and correlation requirements.
+- exact default limits, retention, segment rotation, and fsync frequency;
+- configuration file syntax and secret providers;
+- multi-Worker reload transport/consensus;
+- form, multipart, uploads, compression, and streaming formats;
+- concrete logging, metrics, tracing, database, and object-storage backends;
+- OpenTelemetry package integration;
+- cross-machine clock synchronization;
+- post-v1.0 error-code compatibility guarantees.
 
-### Deferred by P0-D4
+### Remaining framework features
 
 - automatic HEAD/OPTIONS;
 - host routing, reverse routing, mounts, and sub-applications;
-- cookies, forms, multipart, uploads, and advanced body APIs;
 - public run/serve and CLI semantics;
-- sync Handler adaptation;
-- dependency injection;
-- exact numeric limits, timeouts, and media-type defaults.
-
-### Official capabilities and protocols
-
-- Auth, Tenant, Tenant-Auth bridge, RBAC;
-- Data, SQL, database drivers, Redis, Cache;
-- i18n, OpenAPI, Observability, Resilience;
-- Scheduler, Storage, WebSocket;
+- sync Handler adaptation and dependency injection;
+- Auth, Tenant, RBAC, Data, SQL, database drivers, Redis, Cache, i18n, OpenAPI, Resilience, Scheduler, Storage, WebSocket;
 - HTTP/2, HTTP/3, and optional accelerators.
 
-### Support, packaging implementation, and governance
+### Support, release, and governance
 
 - minimum Python version and platform matrix;
 - build backend and authoritative version source;
@@ -178,10 +226,10 @@ Confirmed semantics:
 
 ## Confirmation rule
 
-A proposal or candidate becomes Confirmed only after:
+A proposal becomes Confirmed only after:
 
 1. a dedicated Issue;
-2. a Blueprint amendment or accepted ADR;
+2. Blueprint amendment or accepted ADR;
 3. explicit project-lead confirmation;
 4. reviewed and merged Pull Request;
 5. this register is synchronized.

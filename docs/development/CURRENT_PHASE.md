@@ -2,13 +2,13 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Current phase: P0-D5 - Hardening Foundations
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: none
-Active decision Issue: none
+Active decision branch: `human/dodo/phase-p0-d5-hardening-foundations`
+Active decision Issue: #43
 Parent architecture Issue: #25
-Status: P0-D4 accepted; awaiting next architecture decision
+Status: proposed architecture under project-lead review
 Next phase allowed: no
 
 ## Foundational fact
@@ -19,17 +19,17 @@ It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper
 
 ## Completed decisions
 
-### P0-D1: Single repository and development concurrency
+### P0-D1
 
-Accepted through ADR-001 and PR #32.
+Repository and development concurrency accepted through ADR-001 / PR #32.
 
-### P0-D2: Runtime concurrency
+### P0-D2
 
-Accepted through ADR-002 and PR #35.
+Runtime concurrency accepted through ADR-002 / PR #35.
 
-### P0-D3: Package and component layout
+### P0-D3
 
-Accepted through ADR-003 and PR #38.
+Package and component layout accepted through ADR-003 / PR #38.
 
 ```text
 Distribution:    lingshu
@@ -38,59 +38,83 @@ Production code: lingshu/
 src layout:      prohibited
 ```
 
-### P0-D4: Application Kernel and request pipeline
+### P0-D4
 
-Accepted through ADR-004 and PR #41 at merge commit `bb78918dc2bc92dd49c34258e3707abd37274f12`.
+Application Kernel and request pipeline accepted through ADR-004 / PR #41.
 
-Confirmed:
+Confirmed minimum facade:
 
-- public `LingShu` composition root and private low-level Application Kernel;
-- lifecycle `CREATED → CONFIGURING → FROZEN → STARTING → RUNNING → DRAINING → STOPPING → STOPPED`;
-- immutable Application Revision and atomic Application Plan publication;
-- no route, middleware, exception, extension, or configuration mutation after freeze;
-- asynchronous handler contract with explicit Request input;
-- deterministic application and route middleware onion ordering;
-- canonical twenty-stage request pipeline;
-- immutable Request metadata, scoped state, and bounded single-consumer body;
-- exactly-once handler return normalization;
-- Response lifecycle `NEW → PREPARED → COMMITTED → COMPLETED/ABORTED`;
-- no status/header mutation or replacement response after commit;
-- deterministic route/application/HTTPException/default exception resolution;
-- extension contributions compiled before startup and immutable while running;
-- minimum root exports `LingShu`, `Request`, `Response`, and `HTTPException`.
+```python
+from lingshu import LingShu, Request, Response, HTTPException
+```
 
-## Still unresolved
+## Active proposal: P0-D5
 
-- identifier formats and propagation rules;
-- complete exception taxonomy and safe client-error schema;
-- configuration schema, source precedence, versioning, reload, and rollback;
-- JSON and general serialization/content-negotiation rules;
-- cookies, forms, multipart, uploads, and body-decoding APIs;
-- Runtime Record storage format, budgets, retention, disk safety, and recovery;
-- automatic HEAD/OPTIONS, host routing, reverse routing, mounts, and sub-applications;
-- public run/serve and CLI behavior;
-- Python and platform support range;
-- build backend and version-source mechanism;
-- official capabilities and extensions;
-- release, compatibility, license, contribution, and security policy.
+The proposal defines:
 
-## Recommended next decision
+- separate UTC wall-clock and process-local monotonic time semantics;
+- typed 128-bit opaque Request, Connection, Trace, Operation, Worker, and Record identifiers;
+- SHA-256 Application Revision identifiers;
+- internal Request ID generation regardless of inbound correlation headers;
+- stable lowercase dotted framework error codes;
+- safe `application/problem+json` client errors;
+- configuration precedence, schema versioning, secret redaction, immutable Snapshots, reload, and rollback;
+- strict UTF-8 JSON, duplicate-key and NaN/Infinity rejection, bounded parsing, and explicit custom serializers;
+- 406/415 content-negotiation behavior;
+- Runtime Record reservation before business handling;
+- versioned append-only event envelopes;
+- JSON Lines local segments, atomic manifests, durability policies, budgets, retention, disk watermarks, and crash recovery;
+- shared telemetry fields, redaction classes, and metric-cardinality rules;
+- conversion of the old Hardening Checklist into an integration verification record.
 
-P0-D5 should consolidate the remaining hardening foundations:
+Detailed proposal:
 
-1. Request, Connection, Trace, Operation, Worker, and Revision identifier standards;
-2. exception taxonomy, safe messages, error codes, and redaction;
-3. configuration sources, precedence, validation, immutability, versioning, reload, and rollback;
-4. serialization and content-negotiation baseline;
-5. Runtime Record event envelope, storage budgets, retention, disk safety, failure behavior, and crash recovery;
-6. common telemetry fields and correlation rules.
+- `docs/decisions/ADR-005-hardening-foundations.md`
+- `docs/architecture/HARDENING_FOUNDATIONS.md`
+
+## Explicitly unresolved
+
+P0-D5 does not decide:
+
+- exact numeric limits, retention periods, or fsync frequency;
+- configuration file syntax;
+- secret-provider implementations;
+- multi-Worker reload transport or consensus mechanism;
+- full form, multipart, upload, compression, and streaming serialization;
+- concrete logging, metrics, tracing, database, or object-storage backends;
+- OpenTelemetry integration;
+- Python/platform support and build backend;
+- public run/serve and CLI semantics;
+- official business capabilities and extensions;
+- release and public governance policy.
+
+## Current objective
+
+1. review ADR-005 and the detailed hardening contract;
+2. verify identifier trust boundaries and correlation rules;
+3. verify exception safety and stable code rules;
+4. verify configuration reload has no partial visibility;
+5. verify strict serialization and negotiation behavior;
+6. verify Runtime Record failure, disk, retention, and recovery semantics;
+7. verify telemetry redaction and cardinality rules;
+8. open a documentation-only Pull Request;
+9. keep P1 blocked.
 
 ## Out of scope
 
 - creating production package files or directories;
-- implementing any framework component;
+- implementing identifiers, configuration, serializers, records, or telemetry;
 - adding runtime dependencies;
 - publishing packages;
 - starting P1.
 
-P1 remains blocked until all P0 exit conditions are satisfied and the project lead explicitly authorizes it.
+## Exit conditions for P0-D5
+
+1. ADR-005 and `HARDENING_FOUNDATIONS.md` are reviewed and merged;
+2. identifier, error, configuration, serialization, record, and telemetry contracts are explicit;
+3. Runtime Record reservation and disk-failure behavior are explicit;
+4. the old checklist no longer acts as a second architecture source;
+5. deferred choices remain unresolved;
+6. the project lead performs the final merge.
+
+P0 continues after P0-D5. P1 remains blocked.
