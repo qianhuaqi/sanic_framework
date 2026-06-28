@@ -27,7 +27,9 @@ def main() -> int:
 
     commits = [
         commit
-        for commit in _git("rev-list", "--no-merges", f"{arguments.base}..{arguments.head}").splitlines()
+        for commit in _git(
+            "rev-list", "--no-merges", f"{arguments.base}..{arguments.head}"
+        ).splitlines()
         if commit
     ]
     unsigned: list[str] = []

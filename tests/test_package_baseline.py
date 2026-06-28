@@ -34,9 +34,7 @@ def test_project_metadata_matches_frozen_baseline() -> None:
     assert project["requires-python"] == ">=3.12"
     assert project["license"] == "Apache-2.0"
     assert project["dependencies"] == []
-    assert configuration["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == [
-        "lingshu"
-    ]
+    assert configuration["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == ["lingshu"]
 
 
 def test_root_facade_is_an_explicit_placeholder() -> None:

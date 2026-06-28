@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def test_imports_have_no_process_side_effects(tmp_path: Path) -> None:
-    code = r'''
+    code = r"""
 import importlib
 import json
 import os
@@ -37,7 +37,7 @@ print(json.dumps({
     "forbidden_imports": [name for name in forbidden if name in sys.modules],
     "thread_count_changed": before_threads != {thread.ident for thread in threading.enumerate()},
 }))
-'''
+"""
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
     result = subprocess.run(
