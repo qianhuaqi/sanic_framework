@@ -21,9 +21,7 @@ def make_request(
 ) -> tuple[Scope, Scope, Request]:
     application = Scope.application()
     connection = application.create_child(ScopeKind.CONNECTION)
-    request_scope = connection.create_child(
-        ScopeKind.REQUEST, duration_ns=5_000_000_000
-    )
+    request_scope = connection.create_child(ScopeKind.REQUEST, duration_ns=5_000_000_000)
     body = RequestBody.from_bytes(body_value, scope=request_scope, max_bytes=max_bytes)
     request = Request(
         method=HTTPMethod("get"),
@@ -61,9 +59,7 @@ def test_body_chunk_iteration_preserves_order_and_single_use() -> None:
     async def scenario() -> None:
         application = Scope.application()
         connection = application.create_child(ScopeKind.CONNECTION)
-        request_scope = connection.create_child(
-            ScopeKind.REQUEST, duration_ns=5_000_000_000
-        )
+        request_scope = connection.create_child(ScopeKind.REQUEST, duration_ns=5_000_000_000)
 
         async def source() -> AsyncIterator[bytes]:
             yield b"one"

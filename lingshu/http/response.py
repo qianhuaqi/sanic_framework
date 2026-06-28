@@ -191,9 +191,7 @@ class Response:
             raise _response_state_error("Response mutation is not allowed after commit.")
         if self._state is ResponseState.PREPARED:
             if self._auto_content_length:
-                self._headers = [
-                    item for item in self._headers if item[0] != "content-length"
-                ]
+                self._headers = [item for item in self._headers if item[0] != "content-length"]
                 self._auto_content_length = False
             self._state = ResponseState.NEW
 

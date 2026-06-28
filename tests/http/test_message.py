@@ -21,9 +21,7 @@ def test_invalid_request_targets_fail_safely(value: str) -> None:
 
 
 def test_headers_are_immutable_bounded_and_duplicate_preserving() -> None:
-    headers = Headers(
-        (("Set-Cookie", "a=1"), (b"set-cookie", b"b=2"), ("X-Test", " ok "))
-    )
+    headers = Headers((("Set-Cookie", "a=1"), (b"set-cookie", b"b=2"), ("X-Test", " ok ")))
     assert headers.get_all("SET-cookie") == ("a=1", "b=2")
     assert headers.get("x-test") == "ok"
     assert headers.items()[0] == ("set-cookie", "a=1")
