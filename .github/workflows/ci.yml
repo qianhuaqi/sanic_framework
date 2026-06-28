@@ -17,6 +17,18 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
+  ruff-diagnostic:
+    name: Temporary Ruff diagnostic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -q "ruff>=0.8,<1"
+      - run: ruff --version
+      - run: ruff check .
+
   quality:
     name: Quality and governance
     runs-on: ubuntu-latest
