@@ -1,12 +1,13 @@
 # Current Phase
 
 Project: LingShu Framework
-Current phase: P0-G1 - Governance and Architecture Fact-Source Consolidation
+Canonical repository: `qianhuaqi/lingshu`
+Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Phase type: non-implementation architecture and governance
-Current baseline: `main` at or after PR #28 merge commit `0ff49d7804067114129dd16501f85188e54425c3`
-Current branch: `human/dodo/phase-p0-g1-governance-hardening`
+Current baseline: `main` after PR #29 merge commit `0b5310f5e90dd321f9d5c571a89904dca949847c`
+Active implementation branch: none
 Current issue: #25
-Status: in progress
+Status: awaiting project-lead architecture decisions
 Next phase allowed: no
 
 ## Foundational fact
@@ -19,26 +20,31 @@ The complete previous implementation is preserved at `archive/legacy-sanic-20260
 
 ## Completed baseline
 
-PR #28 has been merged. The active `main` tree now contains architecture and governance files only; legacy source, tests, scaffolds, dependency configuration, and Sanic runtime files are no longer part of the active tree.
+- PR #28 replaced the active tree with the greenfield P0 baseline.
+- PR #29 completed the governance contract, decision-status register, and controlled P0-RC0 Blueprint entrypoint.
+- The repository was renamed from `qianhuaqi/sanic_framework` to `qianhuaqi/lingshu`.
+- The old repository URL redirects to the canonical repository.
+- Legacy source, tests, scaffolds, dependency configuration, and Sanic runtime files are absent from active `main`.
+- Issue #25 is the only active architecture Issue.
 
 ## Current objective
 
-1. Complete the development constitution.
-2. Synchronize README, AGENTS, ADR, phase, and handoff state.
-3. Mark all unresolved package, directory, `src/`, distribution, and release choices as non-executable candidates.
-4. Maintain one authoritative Blueprint while using a separate status register only to track confirmation state.
-5. Integrate accepted hardening requirements into the Blueprint before P0 freeze.
-6. Close or clearly archive remaining legacy implementation Issues.
-7. Prepare explicit P1 scope and acceptance criteria only after the architecture choices are confirmed.
+1. Review the candidate architecture chapter by chapter with the project lead.
+2. Confirm the final repository and source layout.
+3. Confirm Core, HTTP, Server, Record, CLI, and extension boundaries.
+4. Confirm built-in versus separately installable capabilities.
+5. Integrate accepted hardening requirements into the single Blueprint.
+6. Confirm release stages, Python/platform support, and compatibility policy.
+7. Confirm license, contribution, and vulnerability-reporting policy before public release.
+8. Prepare an explicit P1 Issue only after P0 acceptance.
 
 ## In scope
 
-- Architecture and governance documents.
-- Fact-source priority and conflict rules.
-- Blueprint decision-status tracking.
-- Closing or classifying legacy Issues and PRs.
+- Architecture decision discussion and recording.
+- Blueprint amendments and ADRs.
+- Decision-status updates.
 - P0 acceptance preparation.
-- Repository-level public governance decisions such as license, security policy, and contribution policy.
+- Repository-level governance decisions.
 
 ## Out of scope
 
@@ -46,7 +52,8 @@ PR #28 has been merged. The active `main` tree now contains architecture and gov
 - Source package or directory skeleton creation.
 - Sanic adapters, migrations, or compatibility layers.
 - Copying old source, tests, scaffolds, or dependencies.
-- Publishing packages.
+- Runtime dependency introduction.
+- Package publication.
 - Starting P1 before project-lead confirmation.
 
 ## Unresolved decisions
@@ -56,11 +63,12 @@ The following remain candidates and must not be implemented yet:
 - single package versus monorepo multi-distribution layout;
 - direct `lingshu/` package versus any `src/` layout;
 - exact Core, HTTP, Server, Record, CLI, and extension directory boundaries;
-- which capabilities are built-in and which are separately installable;
+- which capabilities are built in and which are separately installable;
 - release-version mapping and first public compatibility promise;
+- supported Python and platform range;
 - open-source license and public contribution/security policies.
 
-The detailed status is tracked in `docs/architecture/P0_DECISION_STATUS.md`.
+The detailed state is tracked in `docs/architecture/P0_DECISION_STATUS.md`.
 
 ## Exit conditions
 
