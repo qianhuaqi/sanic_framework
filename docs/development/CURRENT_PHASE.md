@@ -2,13 +2,13 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0-D3 - Package, Source Layout, and Component Boundaries
+Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: `human/dodo/phase-p0-d3-package-layout`
-Active decision Issue: #37
+Active decision branch: none
+Active decision Issue: none
 Parent architecture Issue: #25
-Status: proposed architecture under project-lead review
+Status: P0-D3 accepted; awaiting next architecture decision
 Next phase allowed: no
 
 ## Foundational fact
@@ -23,77 +23,79 @@ It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper
 
 Accepted through ADR-001 and PR #32.
 
+Confirmed:
+
+- one canonical repository;
+- isolated Issues, branches, worktrees, environments, and Pull Requests;
+- declared write scopes and dependency order;
+- parallel development with serial integration into `main`.
+
 ### P0-D2: Runtime concurrency
 
 Accepted through ADR-002 and PR #35.
 
-The accepted runtime uses standard-library `asyncio` semantics, one event loop per Worker, structured task ownership, bounded admission and backpressure, absolute monotonic Deadline propagation, explicit cancellation, bounded blocking-work isolation, and ordered graceful shutdown.
+Confirmed:
 
-## Active decision proposal
+- standard-library `asyncio` semantics as the correctness baseline;
+- one event loop and Application Runtime per Worker;
+- structured task ownership;
+- bounded admission, queues, executors, telemetry, and records;
+- absolute monotonic Deadline and cancellation propagation;
+- event-loop isolation for blocking work;
+- bounded Worker restart and ordered graceful shutdown.
 
-### P0-D3: Package and component layout
+### P0-D3: Package, source layout, and component boundaries
 
-The project lead has rejected adding a `src/` directory.
+Accepted through ADR-003 and PR #38 at merge commit `66c977f435c23fc9aaa35c4f085a7ca20a81879a`.
 
-The proposal defines:
+Confirmed:
 
 - one Python distribution: `lingshu`;
 - one import package: `lingshu`;
-- one root `pyproject.toml`;
+- one root-level `pyproject.toml`;
+- no `src/` layout;
+- no initial `packages/` monorepo layout;
 - production source directly under root-level `lingshu/`;
-- no `src/` and no `packages/` layout;
 - internal components: `core`, `runtime`, `http`, `server`, `record`, `extensions`, `cli`, and `testing`;
-- one shared framework version and release cadence;
-- default inclusion of Runtime Record mechanisms;
-- explicit dependency direction and cycle prohibition;
-- controlled root public facade and explicit exports;
-- optional integrations loaded lazily without becoming core dependencies;
-- root-level tests, docs, examples, tools, benchmarks, and fuzz directories;
-- mandatory wheel/sdist clean-install tests outside the repository checkout.
+- one framework version and release cadence;
+- Runtime Record mechanisms included by default, with heavy exporters optional;
+- explicit acyclic dependency direction;
+- controlled root public facade;
+- mandatory wheel/sdist clean-install verification outside the checkout.
 
-Detailed proposal:
+## Still unresolved
 
-- `docs/decisions/ADR-003-package-source-layout-and-component-boundaries.md`
-- `docs/architecture/PACKAGE_AND_COMPONENT_LAYOUT.md`
+- Application Kernel state model and composition root;
+- request execution pipeline and exact stage ordering;
+- Request, Response, Router, Middleware, and exception contracts;
+- minimum public API and import surface;
+- identifiers, exceptions, configuration, serialization, and Runtime Record storage budgets;
+- built-in versus optional official capabilities;
+- Python and platform support range;
+- build backend and authoritative version-source mechanism;
+- listener distribution and HTTP/2/HTTP/3 semantics;
+- release, compatibility, license, contribution, and security policies.
 
-## Explicitly unresolved
+## Recommended next decision
 
-P0-D3 does not decide:
+P0-D4 should decide Application Kernel, request execution pipeline, and minimum public API:
 
-- minimum Python version;
-- build backend;
-- exact public application, request, response, Scope, Deadline, limiter, or cancellation names;
-- exact authoritative version-file mechanism;
-- optional dependency extras and official integration catalog;
-- first PyPI release timing;
-- post-v1.0 compatibility policy.
-
-## Current objective
-
-1. review the single-distribution and root-level package proposal;
-2. confirm component responsibilities and dependency direction;
-3. confirm the public/private API rules;
-4. confirm isolated wheel and sdist quality gates;
-5. open a documentation-only Pull Request;
-6. keep P1 blocked.
+1. Application creation and composition responsibilities;
+2. application lifecycle and immutable/frozen configuration boundary;
+3. route registration and compile/freeze boundary;
+4. exact request execution stage order;
+5. middleware scopes and ordering;
+6. Request/Response ownership and mutability rules;
+7. exception mapping and response commit semantics;
+8. minimal user-facing API and controlled root exports;
+9. framework/application boundary and extension participation.
 
 ## Out of scope
 
-- creating `lingshu/`, `tests/`, or `pyproject.toml`;
-- production framework implementation;
+- creating the production `lingshu/` tree or `pyproject.toml`;
+- implementing Kernel, HTTP, Server, Router, Middleware, Record, CLI, or extensions;
 - runtime dependency introduction;
 - package publication;
 - starting P1.
 
-## Exit conditions for P0-D3
-
-1. ADR-003 and the detailed layout document are reviewed and merged;
-2. one distribution, one import package, and one root packaging file are explicit;
-3. no-`src` and root-level `lingshu/` are explicit;
-4. component boundaries and dependency rules are explicit;
-5. public export and optional dependency rules are explicit;
-6. clean wheel/sdist installation gates are explicit;
-7. deferred decisions remain unresolved;
-8. the project lead performs the final merge.
-
-P0 continues after P0-D3. P1 remains blocked.
+P1 remains blocked until all P0 exit conditions are satisfied and the project lead explicitly authorizes it.
