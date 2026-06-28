@@ -2,13 +2,13 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0-D6 - Executable, CLI, Support Matrix, and Build Baseline
+Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: `human/dodo/phase-p0-d6-executable-build-baseline`
-Active decision Issue: #46
+Active decision branch: none
+Active decision Issue: none
 Parent architecture Issue: #25
-Status: proposed architecture under project-lead review
+Status: P0-D6 accepted; awaiting final governance and freeze decision
 Next phase allowed: no
 
 ## Foundational fact
@@ -17,85 +17,96 @@ LingShu is a new, independently implemented Python Web/API framework. It does no
 
 ## Completed decisions
 
-- P0-D1: repository/concurrent development — ADR-001 / PR #32.
+- P0-D1: repository and concurrent-development governance — ADR-001 / PR #32.
 - P0-D2: runtime concurrency — ADR-002 / PR #35.
-- P0-D3: package/component layout — ADR-003 / PR #38.
-- P0-D4: Application Kernel/request pipeline — ADR-004 / PR #41.
+- P0-D3: package and component layout — ADR-003 / PR #38.
+- P0-D4: Application Kernel and request pipeline — ADR-004 / PR #41.
 - P0-D5: Hardening Foundations — ADR-005 / PR #44.
+- P0-D6: executable, CLI, support matrix, and build baseline — ADR-006 / PR #47.
 
-Confirmed package baseline:
+P0-D6 effective merge commit:
 
 ```text
-Distribution:    lingshu
-Import package:  lingshu
-Production code: lingshu/
-src layout:      prohibited
+5f89572398cee509b9571ee1fe8c20bd2f71dfeb
 ```
 
-## Active proposal: P0-D6
+## Confirmed P0-D6 baseline
 
-The proposal defines:
+### Public execution
 
-- ownership boundaries among Application, single-Worker Server, internal Supervisor, and CLI;
-- documented `lingshu.server` public subpackage with `Server`, `ServerConfig`, and `serve`;
-- canonical `lingshu` and equivalent `python -m lingshu` entry points;
-- initial CLI commands `run`, `check`, and `version`;
-- strict `module:attribute` target grammar and explicit synchronous zero-argument `--factory`;
-- production/development/test profiles;
-- development reload through one-child process restart, never in-process reload;
-- cross-platform `spawn` semantics for multi-Worker CLI execution;
-- Supervisor binding each listener once and explicitly transferring it to Workers;
-- readiness based on listeners, required Worker count, identical RevisionId, extensions/resources, and Runtime Record policy;
-- first graceful termination, second hard-stop request, and stable CLI exit codes;
-- CPython 3.12 minimum, required 3.12/3.13/3.14, and visible non-blocking 3.15 preview;
-- Tier 1 64-bit Linux, Windows, and macOS support;
-- Hatchling PEP 517 backend and standard PEP 621 project metadata;
-- static `[project].version` as the single version source;
-- console script `lingshu = "lingshu.cli:main"`;
-- pure-Python wheel and sdist artifact policy;
-- required CI/clean-install matrix.
+```python
+from lingshu.server import Server, ServerConfig, serve
+```
 
-Detailed proposal:
+`Server` and `serve` are single-Worker. Multi-Worker Supervisor remains CLI/internal initially. Application does not supervise processes and Kernel does not import Server.
 
-- `docs/decisions/ADR-006-executable-cli-support-and-build-baseline.md`
-- `docs/architecture/EXECUTABLE_AND_BUILD_BASELINE.md`
+### CLI
 
-## Explicitly unresolved
+```text
+lingshu run module:app
+lingshu run module:create_app --factory
+lingshu check module:app
+lingshu version
+python -m lingshu ...
+```
 
-- actual production files, package code, CLI, Server, Supervisor, or CI implementation;
-- actual first development version;
-- license and public governance policy;
-- exact numeric defaults;
-- concrete health endpoint paths;
-- SIGHUP and production multi-Worker configuration reload transport;
-- async/parameterized factories and advanced CLI commands;
-- PyPy, free-threaded builds, 32-bit systems, and native extensions;
-- PyPI publication, signing, and attestation.
+Discovery accepts strict `module:attribute` only. No expressions, file paths, calls, implicit scanning, or dotted attribute traversal.
 
-## Current objective
+### Processes and shutdown
 
-1. review the Application/Server/Supervisor/CLI ownership split;
-2. verify strict application discovery and no arbitrary expression evaluation;
-3. verify spawn, listener, readiness, signal, and exit-code semantics;
-4. verify Python/platform support commitments;
-5. verify Hatchling, version, artifact, and CI decisions;
-6. open a documentation-only Pull Request;
-7. keep P1 blocked.
+- multi-Worker semantics use cross-platform `spawn`;
+- each Worker independently imports/freezes its Application and reports RevisionId;
+- Supervisor binds listeners once and explicitly transfers them;
+- readiness requires identical RevisionId and all required resources/record policy;
+- first termination drains, second or timeout hard-stops;
+- stable exit codes 0, 1, 2, 3, 4, 5, 6, 7, 8, and 70.
+
+### Support and build
+
+```text
+CPython minimum: 3.12
+Required:        3.12, 3.13, 3.14
+Preview:         3.15 prerelease
+Platforms:       Tier 1 64-bit Linux, Windows, macOS
+Build backend:   Hatchling
+Version source:  [project].version
+Console script:  lingshu = "lingshu.cli:main"
+Artifacts:       py3-none-any wheel + sdist
+```
+
+Packaging acceptance requires isolated build, inventory inspection, non-editable clean install outside checkout, sdist rebuild, separate editable testing, and uninstall verification.
+
+## Still unresolved
+
+- License selection and metadata;
+- contribution, code-of-conduct, and contributor-certificate/DCO policy;
+- security disclosure, supported security versions, and vulnerability handling;
+- changelog and release-note policy;
+- SemVer/pre-1.0 compatibility and deprecation policy;
+- release branches/tags, first development version, PyPI timing, signing, and attestations;
+- exact numeric defaults and health endpoint paths;
+- P1 implementation scope, dependency ordering, Issue breakdown, and acceptance matrix;
+- final P0 Blueprint freeze and explicit P1 authorization.
+
+## Recommended next decision
+
+P0-D7 should be the final P0 governance and freeze decision:
+
+1. choose License and required repository governance files;
+2. define contribution and code-of-conduct rules;
+3. define security reporting and supported-version policy;
+4. define changelog, release notes, SemVer/pre-1.0 compatibility, deprecation, and removal rules;
+5. define tags, branches, version bump, artifact publication, signing/attestation, and rollback policy;
+6. define the first development version and P1 milestone mapping;
+7. create an executable P1 Issue graph and acceptance matrix;
+8. perform the final Blueprint consistency audit;
+9. explicitly freeze P0 and authorize or withhold P1.
 
 ## Out of scope
 
-- creating `pyproject.toml`, `lingshu/`, tests, or workflows;
-- adding runtime/build dependencies to the actual project;
-- implementing or publishing the framework;
-- starting P1.
+- creating production package files, code, tests, or workflows;
+- adding dependencies;
+- publishing artifacts;
+- beginning P1 before explicit authorization.
 
-## Exit conditions for P0-D6
-
-1. ADR-006 and detailed baseline are reviewed and merged;
-2. public and CLI execution boundaries are explicit;
-3. process/listener/readiness/signal/exit semantics are explicit;
-4. Python/platform/build/version/artifact/CI contracts are explicit;
-5. deferred choices remain unresolved;
-6. the project lead performs the final merge.
-
-P0 continues after P0-D6. P1 remains blocked.
+P1 remains blocked.
