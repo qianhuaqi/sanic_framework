@@ -1,27 +1,37 @@
 # ADR-000: Greenfield repository reset
 
-- Status: Accepted direction; pending merge
+- Status: Accepted
 - Date: 2026-06-28
 - Issue: #25
+- Implemented by: PR #28
+- Effective commit: `0ff49d7804067114129dd16501f85188e54425c3`
 
 ## Context
 
-The previous repository contains a Sanic-based implementation, legacy application scaffolding, tests, compatibility rules, and architecture documents. LingShu is now defined as a completely independent Python Web/API framework developed from scratch.
+The previous repository contained a Sanic-based implementation, application scaffolding, tests, dependency files, and old architecture rules. LingShu is now a completely independent Python Web/API framework developed from scratch.
 
-Continuing on the old working tree would repeatedly mislead human and AI developers into treating the legacy implementation as a migration baseline.
+Keeping those files in the active tree repeatedly caused humans and AI developers to treat the old project as the implementation baseline.
 
 ## Decision
 
 1. Preserve the previous repository state in `archive/legacy-sanic-20260628`.
-2. Establish a clean greenfield branch containing only architecture and governance facts.
-3. Do not migrate, adapt, or preserve legacy Sanic code for compatibility.
-4. Do not carry old API deprecation rules into the new framework before v1.0.
-5. Treat the old branch as non-authoritative reference material only.
-6. Begin production implementation only after P0 Blueprint acceptance and creation of a P1 Issue.
+2. Use the active `main` branch only for the greenfield framework.
+3. Do not copy or adapt old Sanic code into the new framework.
+4. Do not preserve old public APIs before v1.0.
+5. Treat archived code, old Issues, and old Pull Requests as reference material only.
+6. Re-evaluate any useful historical idea against the confirmed Blueprint before implementing it.
+7. Start production implementation only after P0 acceptance and creation of a P1 Issue.
 
 ## Consequences
 
-- The new branch has no production source code or old tests.
-- Existing open legacy Issues must be closed or explicitly marked historical before P1.
-- Any useful concept from the legacy repository must be re-approved under the new Blueprint before reimplementation.
-- Repository history remains available through the archive branch and Git history, while the active working tree is clean.
+- The active tree contains no production source code or old tests.
+- Historical implementation tasks must be closed or marked historical before P1.
+- New package layout, dependencies, runtime design, and public APIs come only from confirmed greenfield decisions.
+- Repository history does not create a compatibility requirement.
+
+## Verification
+
+- Archive branch: `archive/legacy-sanic-20260628`
+- Archive commit: `b869270e0ec7cbc324d17ef246e39d0873aab14f`
+- Reset Pull Request: #28
+- Reset merge commit: `0ff49d7804067114129dd16501f85188e54425c3`
