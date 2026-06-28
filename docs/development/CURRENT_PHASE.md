@@ -2,13 +2,13 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0-D1 - Single Repository and Concurrency Governance
+Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Phase type: non-implementation architecture and governance
-Current baseline: latest accepted `main`
-Active branch: `human/dodo/phase-p0-d1-single-repo-concurrency`
-Current Issue: #31
+Accepted baseline: latest accepted `main`
+Active decision branch: none
+Active decision Issue: none
 Parent architecture Issue: #25
-Status: decision documentation and review
+Status: awaiting the next project-lead architecture decision
 Next phase allowed: no
 
 ## Foundational fact
@@ -19,17 +19,23 @@ It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or any other upp
 
 The previous implementation is preserved at `archive/legacy-sanic-20260628` and is not an active source of truth.
 
-## Confirmed in this decision
+## Completed decisions
 
-- LingShu uses one canonical GitHub repository: `qianhuaqi/lingshu`.
-- Core, official capabilities, tests, documentation, tooling, and release metadata are governed in this repository unless a future ADR proves a separate repository is necessary.
-- Single repository does not mean a shared branch or shared writable directory.
-- Concurrent tasks use independent Issues, branches, worktrees or clones, virtual environments, and Pull Requests.
-- One branch has one primary writer.
-- Parallel work requires declared, non-overlapping write scopes.
-- Shared contracts and foundation work merge before dependent tasks.
-- Development may be parallel; integration into `main` is serial.
-- Runtime concurrency remains a separate P0 architecture decision, with boundedness, isolation, cancellation, observability, backpressure, and deterministic cleanup already required.
+### P0-D1: Single repository and concurrency governance
+
+Implemented by PR #32 and ADR-001.
+
+Confirmed:
+
+- one canonical GitHub repository: `qianhuaqi/lingshu`;
+- no separate repositories for Core, HTTP, Server, Record, or official capabilities during initial development;
+- one Issue, writer-prefixed branch, primary writer, independent worktree or clone, virtual environment, and Pull Request per concurrent task;
+- explicit write scopes, dependencies, conflicts, integration order, and required checks;
+- independent tasks may run in parallel;
+- overlapping paths and shared contracts are serialized;
+- provider contracts merge before dependent work;
+- development may be parallel, but integration into `main` is serial;
+- runtime concurrency must be bounded, isolated, cancellable, observable, backpressured, and deterministically cleaned up.
 
 ## Still unresolved
 
@@ -47,28 +53,29 @@ The following remain candidates and must not be implemented yet:
 
 ## Current objective
 
-1. Record the single-repository decision in ADR-001 and the Blueprint.
-2. Establish an executable concurrent-development operating model.
-3. Update decision status and agent rules.
-4. Verify that packaging and source-layout questions remain unresolved.
-5. Open a documentation-only Pull Request for project-lead review.
+1. Select the next unresolved architecture decision under Issue #25.
+2. Create a dedicated decision Issue with explicit scope and exclusions.
+3. Update the Blueprint and decision-status register only after project-lead confirmation.
+4. Keep P1 blocked until all P0 exit conditions are satisfied.
 
 ## Out of scope
 
 - Production framework implementation.
 - Source package or directory skeleton creation.
 - Runtime dependency introduction.
-- Selection or implementation of the runtime concurrency model.
 - Package publication.
 - Starting P1.
 
-## Exit conditions for P0-D1
+## P0 exit conditions
 
-1. ADR-001 is merged and marked accepted.
-2. The Blueprint confirms one canonical repository.
-3. `P0_DECISION_STATUS.md` records single repository and concurrent-development governance as Confirmed.
-4. `CONCURRENT_DEVELOPMENT.md` defines isolation, write scopes, dependencies, conflicts, worktrees, integration order, and handoff.
-5. Distribution count, `src/`, directory layout, and runtime concurrency implementation remain Candidate.
-6. The project lead performs the final merge.
+P0 ends only when:
 
-P0 continues after P0-D1. P1 remains blocked.
+1. the project lead confirms the complete Blueprint;
+2. all accepted hardening items are integrated into that single Blueprint;
+3. package, source, component, dependency, extension, and runtime-concurrency structures are explicitly confirmed;
+4. release stages and P1 acceptance criteria are ready;
+5. all legacy implementation Issues are closed or historical;
+6. governance files are internally consistent;
+7. the project lead explicitly authorizes creation of the P1 Issue.
+
+P1 remains blocked.

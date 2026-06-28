@@ -2,7 +2,8 @@
 
 - Status: Active P0 control document
 - Parent Issue: #25
-- Current decision Issue: #31
+- Active decision Issue: none
+- Last accepted decision: P0-D1 / ADR-001 / PR #32
 - Purpose: track confirmation state without creating a second architecture design
 - Last updated: 2026-06-28
 
@@ -42,6 +43,8 @@ These confirmed responsibilities do not yet confirm their directory or package p
 - Framework core, official capabilities, tests, documentation, examples, build tooling, protocol tests, security tests, and release metadata are governed in this repository unless a future accepted ADR proves a separate repository is necessary.
 - This confirms one repository only. It does not yet confirm one distribution, multiple distributions, a `packages/` root, or a `src/` layout.
 - ADR-001 defines the repository and concurrent-development model.
+- Decision Issue #31 is completed.
+- PR #32 merged the decision into `main` at commit `92d6c0795fd5a6d21841a8ac3a1896d703809e40`.
 
 ### Concurrent development governance
 
