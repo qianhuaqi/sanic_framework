@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import stat
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -271,9 +272,7 @@ class LocalRecordWriter:
 
         self._ensure_started()
         assert self._closed_dir is not None
-        return tuple(
-            self._safe_path(self._closed_dir, name) for name in self._closed_segments
-        )
+        return tuple(self._safe_path(self._closed_dir, name) for name in self._closed_segments)
 
     def close(self) -> None:
         """Idempotently release the writer lock without deleting active data."""
@@ -304,10 +303,8 @@ class LocalRecordWriter:
                     "Record storage contains an invalid closed segment.",
                 )
             self._closed_segments.append(path.name)
-        try:
+        with suppress(OSError):
             os.chmod(self.root, stat.S_IRWXU)
-        except OSError:
-            pass
 
     def _prepare_directory(self, name: str) -> Path:
         path = self.root / name

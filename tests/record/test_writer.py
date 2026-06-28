@@ -157,9 +157,7 @@ def test_flush_restores_event_when_writer_fails(tmp_path: Path) -> None:
             revision_id=RevisionId.parse("c" * 64),
         )
         assert record.append("request.one", component="record", outcome="ok")
-        writer = LocalRecordWriter(
-            tmp_path / "records", watermarks=StorageWatermarks(10, 20, 30)
-        )
+        writer = LocalRecordWriter(tmp_path / "records", watermarks=StorageWatermarks(10, 20, 30))
         writer.start()
         writer.update_watermark(30)
         deadline = Deadline(writer.clock.now_ns() + 1_000_000_000)

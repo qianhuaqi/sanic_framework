@@ -39,13 +39,9 @@ class QueueReservation:
         """Consume reservation on first event, then use ordinary bounded capacity."""
 
         if self._released:
-            return self._queue._drop(
-                policy, "The Runtime Record reservation is closed."
-            )
+            return self._queue._drop(policy, "The Runtime Record reservation is closed.")
         if not self._available:
-            return self._queue._drop(
-                policy, "Runtime Record capacity was not reserved."
-            )
+            return self._queue._drop(policy, "Runtime Record capacity was not reserved.")
         reserved = not self._claimed
         if reserved:
             self._queue._release_reserved_capacity()
@@ -119,8 +115,7 @@ class BoundedRecordQueue:
             return QueueReservation(self, record_id, available=False)
         if (
             len(self._items) + self._reserved_items >= self.max_items
-            or self._queued_bytes + self._reserved_bytes + self.reservation_bytes
-            > self.max_bytes
+            or self._queued_bytes + self._reserved_bytes + self.reservation_bytes > self.max_bytes
         ):
             if policy is RecordPolicy.REQUIRED:
                 raise _record_error(
@@ -146,10 +141,7 @@ class BoundedRecordQueue:
 
         if not payload or not payload.endswith(b"\n") or payload.count(b"\n") != 1:
             raise ValueError("restored record payload must be one complete JSON line")
-        if (
-            len(self._items) >= self.max_items
-            or self._queued_bytes + len(payload) > self.max_bytes
-        ):
+        if len(self._items) >= self.max_items or self._queued_bytes + len(payload) > self.max_bytes:
             raise RuntimeError("record queue restore would exceed configured capacity")
         self._items.appendleft(payload)
         self._queued_bytes += len(payload)

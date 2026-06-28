@@ -93,13 +93,16 @@ class RecordBudgets:
     max_attribute_depth: int = 4
 
     def __post_init__(self) -> None:
-        if min(
-            self.max_event_bytes,
-            self.max_events_per_record,
-            self.max_record_bytes,
-            self.max_attributes,
-            self.max_attribute_depth,
-        ) <= 0:
+        if (
+            min(
+                self.max_event_bytes,
+                self.max_events_per_record,
+                self.max_record_bytes,
+                self.max_attributes,
+                self.max_attribute_depth,
+            )
+            <= 0
+        ):
             raise ValueError("record budgets must be positive")
         if self.max_event_bytes > self.max_record_bytes:
             raise ValueError("max_event_bytes cannot exceed max_record_bytes")
@@ -423,10 +426,7 @@ def _freeze_json(value: object, *, depth: int, max_depth: int) -> JSONValue:
             frozen[key] = _freeze_json(item, depth=depth + 1, max_depth=max_depth)
         return MappingProxyType(frozen)
     if isinstance(value, list | tuple):
-        return tuple(
-            _freeze_json(item, depth=depth + 1, max_depth=max_depth)
-            for item in value
-        )
+        return tuple(_freeze_json(item, depth=depth + 1, max_depth=max_depth) for item in value)
     raise _record_error(
         "record.attribute_invalid",
         "A Runtime Record attribute has an unsupported value type.",
