@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import pytest
-
 from lingshu.core.config import (
     ConfigField,
     ConfigSchema,
@@ -39,19 +38,13 @@ def schema() -> ConfigSchema:
             "server.host": ConfigField(
                 as_string, default="127.0.0.1", redaction=RedactionClass.PUBLIC
             ),
-            "server.port": ConfigField(
-                as_integer, default=8000, redaction=RedactionClass.PUBLIC
-            ),
+            "server.port": ConfigField(as_integer, default=8000, redaction=RedactionClass.PUBLIC),
             "server.debug": ConfigField(as_boolean, default=False),
             "features.flags": ConfigField(default={"a": True, "nested": {"x": 1}}),
             "features.names": ConfigField(as_string_tuple, default=("base",)),
-            "database.password": ConfigField(
-                required=True, redaction=RedactionClass.SECRET
-            ),
+            "database.password": ConfigField(required=True, redaction=RedactionClass.SECRET),
             "token": ConfigField(required=True, redaction=RedactionClass.SENSITIVE),
-            "worker.count": ConfigField(
-                as_integer, default=1, reload_policy=ReloadPolicy.STATIC
-            ),
+            "worker.count": ConfigField(as_integer, default=1, reload_policy=ReloadPolicy.STATIC),
         },
     )
 
@@ -66,9 +59,7 @@ def secret_source() -> ConfigSource:
 def test_precedence_is_deterministic_and_source_order_is_irrelevant() -> None:
     sources = [
         ConfigSource(ConfigSourceKind.CLI, {"server.port": 9400}),
-        ConfigSource(
-            ConfigSourceKind.FILE, {"server": {"port": 8100}}, schema_version=1
-        ),
+        ConfigSource(ConfigSourceKind.FILE, {"server": {"port": 8100}}, schema_version=1),
         environment_source({"LINGSHU_SERVER__PORT": "8200"}),
         ConfigSource(
             ConfigSourceKind.PROGRAMMATIC,
@@ -172,9 +163,7 @@ def test_unknown_duplicate_normalized_and_duplicate_source_fail() -> None:
 
 def test_schema_version_and_required_field_fail_safely() -> None:
     with pytest.raises(ConfigurationError) as mismatch:
-        build_config_snapshot(
-            schema(), [ConfigSource(ConfigSourceKind.FILE, {}, schema_version=2)]
-        )
+        build_config_snapshot(schema(), [ConfigSource(ConfigSourceKind.FILE, {}, schema_version=2)])
     assert mismatch.value.code == "config.schema_mismatch"
 
     with pytest.raises(ConfigurationError) as missing:
@@ -211,9 +200,7 @@ def test_plaintext_secret_never_enters_repr_or_revision_material() -> None:
         [secret_source()],
         secret_provider=Provider({"db/main": "super-secret"}),
     )
-    rendered = (
-        repr(snapshot) + repr(snapshot.redacted()) + snapshot.canonical_bytes.decode()
-    )
+    rendered = repr(snapshot) + repr(snapshot.redacted()) + snapshot.canonical_bytes.decode()
     assert "super-secret" not in rendered
     assert "opaque-token" not in repr(snapshot.redacted())
     assert b"super-secret" not in snapshot.canonical_bytes
@@ -221,16 +208,10 @@ def test_plaintext_secret_never_enters_repr_or_revision_material() -> None:
     assert b"opaque-token" not in snapshot.canonical_bytes
 
 
-def test_revision_changes_for_nonsecret_values_but_not_plaintext_secret_rotation() -> (
-    None
-):
+def test_revision_changes_for_nonsecret_values_but_not_plaintext_secret_rotation() -> None:
     source = [secret_source()]
-    first = build_config_snapshot(
-        schema(), source, secret_provider=Provider({"db/main": "a"})
-    )
-    rotated = build_config_snapshot(
-        schema(), source, secret_provider=Provider({"db/main": "b"})
-    )
+    first = build_config_snapshot(schema(), source, secret_provider=Provider({"db/main": "a"}))
+    rotated = build_config_snapshot(schema(), source, secret_provider=Provider({"db/main": "b"}))
     changed = build_config_snapshot(
         schema(),
         [

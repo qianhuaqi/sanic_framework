@@ -65,14 +65,8 @@ class SecretRef:
     reference: str
 
     def __post_init__(self) -> None:
-        if (
-            not self.reference
-            or len(self.reference) > 512
-            or _CONTROL.search(self.reference)
-        ):
-            raise ValueError(
-                "secret reference must be non-empty, bounded, and control-free"
-            )
+        if not self.reference or len(self.reference) > 512 or _CONTROL.search(self.reference):
+            raise ValueError("secret reference must be non-empty, bounded, and control-free")
 
     def __repr__(self) -> str:
         return "SecretRef(<redacted>)"
@@ -194,11 +188,10 @@ class ConfigSource:
             raise ValueError("defaults are owned by ConfigSchema")
         if self.kind is ConfigSourceKind.FILE and self.schema_version is None:
             raise ValueError("file configuration sources require schema_version")
-        if self.name is not None:
-            if not self.name or len(self.name) > 128 or _CONTROL.search(self.name):
-                raise ValueError(
-                    "source name must be non-empty, bounded, and control-free"
-                )
+        if self.name is not None and (
+            not self.name or len(self.name) > 128 or _CONTROL.search(self.name)
+        ):
+            raise ValueError("source name must be non-empty, bounded, and control-free")
         object.__setattr__(self, "values", _freeze_raw_mapping(self.values))
 
 
@@ -238,9 +231,7 @@ class ConfigSnapshot:
         except KeyError as exc:
             raise KeyError(key) from exc
         if not isinstance(value, expected_type):
-            raise TypeError(
-                f"configuration value {key!r} is not {expected_type.__name__}"
-            )
+            raise TypeError(f"configuration value {key!r} is not {expected_type.__name__}")
         return value
 
     def redacted(self, *, include_internal: bool = False) -> Mapping[str, object]:
@@ -249,9 +240,9 @@ class ConfigSnapshot:
         flat: dict[str, object] = {}
         for key, value in self.values.items():
             redaction = self.redaction_metadata[key]
-            if redaction is RedactionClass.PUBLIC:
-                flat[key] = _thaw_nonsecret(value)
-            elif redaction is RedactionClass.INTERNAL and include_internal:
+            if redaction is RedactionClass.PUBLIC or (
+                redaction is RedactionClass.INTERNAL and include_internal
+            ):
                 flat[key] = _thaw_nonsecret(value)
             else:
                 flat[key] = f"<{redaction.value}>"
@@ -367,9 +358,7 @@ def build_config_snapshot(
     merged: dict[str, object] = {}
     manifest: list[SourceManifestEntry] = []
 
-    defaults = {
-        key: field.default for key, field in schema.fields.items() if field.has_default
-    }
+    defaults = {key: field.default for key, field in schema.fields.items() if field.has_default}
     if defaults:
         merged.update(defaults)
         manifest.append(
@@ -379,10 +368,7 @@ def build_config_snapshot(
         )
 
     for source in ordered:
-        if (
-            source.kind is ConfigSourceKind.FILE
-            and source.schema_version != schema.version
-        ):
+        if source.kind is ConfigSourceKind.FILE and source.schema_version != schema.version:
             raise _configuration_error(
                 "config.schema_mismatch",
                 "Configuration schema version does not match.",
@@ -397,11 +383,7 @@ def build_config_snapshot(
                 details={"keys": unknown},
             )
         for key, value in flattened.items():
-            if (
-                key in merged
-                and isinstance(merged[key], Mapping)
-                and isinstance(value, Mapping)
-            ):
+            if key in merged and isinstance(merged[key], Mapping) and isinstance(value, Mapping):
                 merged[key] = _deep_merge(merged[key], value)
             else:
                 merged[key] = value
@@ -414,9 +396,7 @@ def build_config_snapshot(
         )
 
     missing = tuple(
-        key
-        for key, field in schema.fields.items()
-        if field.required and key not in merged
+        key for key, field in schema.fields.items() if field.required and key not in merged
     )
     if missing:
         raise _configuration_error(
@@ -435,9 +415,7 @@ def build_config_snapshot(
             secret_provider=secret_provider,
         )
 
-    redaction = MappingProxyType(
-        {key: schema.fields[key].redaction for key in normalized_values}
-    )
+    redaction = MappingProxyType({key: schema.fields[key].redaction for key in normalized_values})
     reload_metadata = MappingProxyType(
         {key: schema.fields[key].reload_policy for key in normalized_values}
     )
@@ -579,10 +557,7 @@ def _freeze_raw_value(value: object) -> object:
         return _freeze_raw_mapping(value)
     if isinstance(value, list | tuple):
         return tuple(_freeze_raw_value(item) for item in value)
-    if (
-        isinstance(value, str | int | float | bool | SecretRef | SecretValue)
-        or value is None
-    ):
+    if isinstance(value, str | int | float | bool | SecretRef | SecretValue) or value is None:
         return value
     raise TypeError(f"unsupported configuration source value: {type(value).__name__}")
 
@@ -606,12 +581,8 @@ def _freeze_config_value(value: object, *, allow_secret: bool = True) -> ConfigV
             frozen[key] = _freeze_config_value(item, allow_secret=allow_secret)
         return MappingProxyType(frozen)
     if isinstance(value, list | tuple):
-        return tuple(
-            _freeze_config_value(item, allow_secret=allow_secret) for item in value
-        )
-    raise TypeError(
-        f"unsupported normalized configuration value: {type(value).__name__}"
-    )
+        return tuple(_freeze_config_value(item, allow_secret=allow_secret) for item in value)
+    raise TypeError(f"unsupported normalized configuration value: {type(value).__name__}")
 
 
 def _deep_merge(lower: object, higher: Mapping[str, object]) -> Mapping[str, object]:
@@ -619,11 +590,7 @@ def _deep_merge(lower: object, higher: Mapping[str, object]) -> Mapping[str, obj
         return higher
     merged: dict[str, object] = dict(lower)
     for key, value in higher.items():
-        if (
-            key in merged
-            and isinstance(merged[key], Mapping)
-            and isinstance(value, Mapping)
-        ):
+        if key in merged and isinstance(merged[key], Mapping) and isinstance(value, Mapping):
             merged[key] = _deep_merge(merged[key], value)
         else:
             merged[key] = value
@@ -639,8 +606,7 @@ def _canonical_snapshot_bytes(
     document = {
         "schema_version": schema_version,
         "values": {
-            key: _canonical_value(key, value, redaction[key])
-            for key, value in values.items()
+            key: _canonical_value(key, value, redaction[key]) for key, value in values.items()
         },
         "redaction": {key: value.value for key, value in sorted(redaction.items())},
         "reload": {key: value.value for key, value in sorted(reload_metadata.items())},
