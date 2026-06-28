@@ -2,13 +2,13 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Current phase: P0-D2 - Runtime Concurrency, Task Ownership, and Graceful Shutdown
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: none
-Active decision Issue: none
+Active decision branch: `human/dodo/phase-p0-d2-runtime-concurrency`
+Active decision Issue: #34
 Parent architecture Issue: #25
-Status: awaiting the next project-lead architecture decision
+Status: proposed architecture under project-lead review
 Next phase allowed: no
 
 ## Foundational fact
@@ -28,54 +28,72 @@ Implemented by PR #32 and ADR-001.
 Confirmed:
 
 - one canonical GitHub repository: `qianhuaqi/lingshu`;
-- no separate repositories for Core, HTTP, Server, Record, or official capabilities during initial development;
-- one Issue, writer-prefixed branch, primary writer, independent worktree or clone, virtual environment, and Pull Request per concurrent task;
-- explicit write scopes, dependencies, conflicts, integration order, and required checks;
-- independent tasks may run in parallel;
-- overlapping paths and shared contracts are serialized;
-- provider contracts merge before dependent work;
-- development may be parallel, but integration into `main` is serial;
-- runtime concurrency must be bounded, isolated, cancellable, observable, backpressured, and deterministically cleaned up.
+- independent Issue, branch, primary writer, worktree or clone, virtual environment, and Pull Request per concurrent task;
+- explicit write scopes and dependency order;
+- parallel development with serial integration into `main`.
 
-## Still unresolved
+## Active decision proposal
 
-The following remain candidates and must not be implemented yet:
+### P0-D2: Runtime concurrency
 
-- one Python distribution versus multiple distributions inside the single repository;
-- `packages/` versus another repository layout;
-- direct `lingshu/` versus a `src/` layout;
-- exact Core, HTTP, Server, Record, CLI, testing, and extension boundaries;
-- runtime event-loop, worker, process, thread, task-group, admission-control, and shutdown models;
-- built-in versus separately installable capabilities;
-- release-version mapping and compatibility policy;
-- supported Python and platform range;
-- license and public contribution/security policies.
+The proposal defines:
+
+- standard-library `asyncio` semantics as the correctness baseline;
+- one event loop per Worker process;
+- Supervisor-managed Workers with bounded restart policy;
+- structured task ownership from Supervisor to Operation Scope;
+- request-owned versus application-owned tasks;
+- sequential request execution per HTTP/1.1 connection and concurrency across connections;
+- hierarchical bounded admission control;
+- transport, body, route, executor, dependency, telemetry, and Runtime Record backpressure;
+- absolute monotonic Deadline propagation;
+- explicit cancellation reasons and parent-to-child propagation;
+- bounded thread and process executors for blocking work;
+- RUNNING → DRAINING → STOPPING → STOPPED shutdown semantics;
+- context isolation, observability, and concurrency test requirements.
+
+Detailed proposal:
+
+- `docs/decisions/ADR-002-runtime-concurrency-model.md`
+- `docs/architecture/RUNTIME_CONCURRENCY_MODEL.md`
+
+## Explicitly unresolved
+
+P0-D2 does not decide:
+
+- minimum Python version;
+- public API class and method names;
+- exact numeric capacity and timeout defaults;
+- mandatory third-party event loop or parser;
+- listener socket distribution strategy;
+- HTTP/2 and HTTP/3 multiplexing;
+- distribution count, `packages/`, `src/`, or physical source layout.
 
 ## Current objective
 
-1. Select the next unresolved architecture decision under Issue #25.
-2. Create a dedicated decision Issue with explicit scope and exclusions.
-3. Update the Blueprint and decision-status register only after project-lead confirmation.
-4. Keep P1 blocked until all P0 exit conditions are satisfied.
+1. review ADR-002 and the detailed runtime model;
+2. confirm or revise ownership, Worker, admission, Deadline, cancellation, blocking-work, and shutdown semantics;
+3. ensure the decision remains independent from unresolved package and directory choices;
+4. open a documentation-only Pull Request;
+5. keep P1 blocked.
 
 ## Out of scope
 
-- Production framework implementation.
-- Source package or directory skeleton creation.
-- Runtime dependency introduction.
-- Package publication.
-- Starting P1.
+- production framework implementation;
+- source package or directory skeleton creation;
+- runtime dependency introduction;
+- package publication;
+- starting P1.
 
-## P0 exit conditions
+## Exit conditions for P0-D2
 
-P0 ends only when:
+1. ADR-002 and the runtime concurrency model are reviewed and merged;
+2. task ownership and background-task semantics are explicit;
+3. Worker and event-loop semantics are explicit;
+4. admission, backpressure, Deadline, cancellation, and blocking-work rules are explicit;
+5. graceful shutdown and crash-restart semantics are explicit;
+6. observability and test matrices are explicit;
+7. deferred decisions remain marked unresolved;
+8. the project lead performs the final merge.
 
-1. the project lead confirms the complete Blueprint;
-2. all accepted hardening items are integrated into that single Blueprint;
-3. package, source, component, dependency, extension, and runtime-concurrency structures are explicitly confirmed;
-4. release stages and P1 acceptance criteria are ready;
-5. all legacy implementation Issues are closed or historical;
-6. governance files are internally consistent;
-7. the project lead explicitly authorizes creation of the P1 Issue.
-
-P1 remains blocked.
+P0 continues after P0-D2. P1 remains blocked.
