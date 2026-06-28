@@ -1,31 +1,31 @@
 # P0 Hardening Integration Verification
 
-- Status: Proposed verification mapping for P0-D5
+- Status: Verified
 - Parent Issue: #25
-- Decision Issue: #43
+- Decision Issue: #43 (completed)
+- Pull Request: #44
+- Effective merge commit: `704146f103e2daafac7e489951497411821e9ba9`
 - Authoritative architecture: `docs/architecture/LINGSHU_FRAMEWORK_BLUEPRINT.md`
 - Detailed hardening contract: `docs/architecture/HARDENING_FOUNDATIONS.md`
 
-> This file is no longer an independent architecture checklist. It verifies where the original hardening topics are integrated. The Blueprint and accepted ADRs are authoritative.
+> This file is an integration-verification record only. It is not an independent architecture specification. The Blueprint and accepted ADRs are authoritative.
 
-## Integration mapping
+## Verified integration mapping
 
-### 1. Unified time model
+### Unified time model
 
-Integrated by:
+Integrated by ADR-002 and ADR-005:
 
-- ADR-002: absolute monotonic Deadline and duration semantics;
-- ADR-005 proposal: UTC RFC3339 wall time, process-local monotonic time, per-record sequence, no cross-process monotonic comparison.
+- wall clock is used for readable timestamps, retention, and cross-process correlation;
+- monotonic time is used for Deadline, timeout, queue wait, scheduling, and duration;
+- monotonic values are not compared across Workers or machines;
+- Runtime Records use a local event sequence rather than an invented global order.
 
-Verification:
+Status: **Verified**.
 
-- [x] system/wall time is not used for Deadline measurement;
-- [x] monotonic time is used for timeout, queue wait, scheduling, and duration;
-- [x] cross-process ordering does not invent a total order.
+### Standard identifiers
 
-### 2. Standard identifiers
-
-Integrated by ADR-005 proposal:
+Integrated by ADR-005:
 
 - RequestId;
 - ConnectionId;
@@ -35,98 +35,87 @@ Integrated by ADR-005 proposal:
 - RecordId;
 - RevisionId.
 
-Verification:
+Runtime IDs are typed, opaque, non-semantic, and unpredictable. Internal RequestId cannot be replaced by inbound correlation.
 
-- [x] runtime IDs are typed, opaque, non-semantic, and unpredictable;
-- [x] internal Request ID cannot be replaced by inbound correlation;
-- [x] canonical text formats are explicit;
-- [x] Revision ID is derived from canonical validated revision material.
+Status: **Verified**.
 
-### 3. Exception semantics
+### Exception semantics
 
-Integrated by ADR-004 and ADR-005 proposal.
+Integrated by ADR-004 and ADR-005:
 
-Verification:
+- stable exception categories and dotted error codes;
+- explicit client visibility, retryability, severity, and fatal scope;
+- safe problem responses;
+- internal cause-chain protection;
+- cancellation remains control flow.
 
-- [x] stable exception categories and error codes;
-- [x] explicit client visibility and retryability;
-- [x] fatal scope and severity;
-- [x] safe problem response;
-- [x] cause-chain and sensitive-data redaction;
-- [x] cancellation is not converted into an ordinary error.
+Status: **Verified**.
 
-### 4. Configuration versioning
+### Configuration versioning
 
-Integrated by ADR-004 freeze semantics and ADR-005 proposal.
+Integrated by ADR-004 and ADR-005:
 
-Verification:
+- schema version and fail-fast mismatch;
+- explicit deterministic migration;
+- immutable typed Configuration Snapshot;
+- validate, prepare, freeze, publish, drain, and cleanup reload transaction;
+- no partial visibility;
+- rollback or explicit degraded state.
 
-- [x] schema version and fail-fast mismatch;
-- [x] explicit deterministic migration;
-- [x] immutable typed Configuration Snapshot;
-- [x] validate/prepare/freeze/publish/drain/cleanup reload flow;
-- [x] no partial visibility;
-- [x] rollback or explicit degraded state.
+Status: **Verified**.
 
-### 5. Serialization rules
+### Serialization rules
 
-Integrated by ADR-005 proposal.
+Integrated by ADR-005:
 
-Verification:
+- strict UTF-8 JSON;
+- explicit RFC3339 UTC datetime serializer;
+- explicit base64 bytes serializer;
+- clear null behavior;
+- NaN, Infinity, and duplicate-key rejection;
+- bounded parsing and encoding;
+- streaming formats explicitly deferred rather than guessed.
 
-- [x] UTF-8 JSON baseline;
-- [x] RFC3339 UTC datetime through explicit serializer;
-- [x] bytes use base64 only through explicit schema/serializer;
-- [x] null semantics explicit;
-- [x] NaN/Infinity rejected;
-- [x] duplicate JSON keys rejected;
-- [x] parsing and encoding are bounded;
-- [x] streaming formats remain explicitly deferred rather than guessed.
+Status: **Verified**.
 
-### 6. Async context isolation
+### Async context isolation
 
-Integrated by ADR-002 and ADR-004.
+Integrated by ADR-002 and ADR-004:
 
-Verification:
+- Request and Operation Scope ownership;
+- request-created child tasks are request-owned;
+- detached tasks do not retain request context by default;
+- context is cleared at Scope completion;
+- application singletons do not retain Request objects.
 
-- [x] Request/Operation Scope ownership;
-- [x] request-created child tasks are request-owned;
-- [x] detached background tasks clear request context;
-- [x] context is cleared at Scope completion;
-- [x] application singletons do not retain Request objects.
+Status: **Verified**.
 
-### 7. Telemetry standard fields
+### Telemetry standard fields
 
-Integrated by ADR-002 and ADR-005 proposal.
+Integrated by ADR-002 and ADR-005:
 
-Verification:
+- common correlation and outcome fields;
+- duration, status, stable error code, cancellation reason, and component;
+- shared redaction classification;
+- high-cardinality identifiers prohibited as metric labels;
+- bounded labels and attributes.
 
-- [x] request/trace/operation/revision/worker correlation fields;
-- [x] duration, status, outcome, error code, cancellation reason, and component;
-- [x] shared redaction classification;
-- [x] high-cardinality identifiers prohibited as metric labels;
-- [x] attribute/label cardinality is bounded.
+Status: **Verified**.
 
-### 8. Worker and storage resource budgets
+### Worker and storage budgets
 
-Integrated by ADR-002 and ADR-005 proposal.
+Integrated by ADR-002 and ADR-005:
 
-Verification:
+- bounded requests, connections, queues, executors, records, and disk;
+- independent event, record, queue, segment, retention, flush, and recovery budgets;
+- explicit backpressure or rejection;
+- soft, hard, and critical disk watermarks;
+- bounded cleanup and crash recovery.
 
-- [x] active requests and connections bounded;
-- [x] event/record queue items and bytes bounded;
-- [x] event/record/segment/total disk budgets;
-- [x] soft, hard, and critical disk watermarks;
-- [x] explicit backpressure or request rejection;
-- [x] bounded retention, flush, shutdown, and crash recovery work.
+Status: **Verified**.
 
-## Freeze rule
+## Result
 
-This verification file is complete only after:
+All original P0 hardening topics are integrated into the accepted Blueprint and ADRs. No separate hardening architecture remains active.
 
-1. ADR-005 and `HARDENING_FOUNDATIONS.md` are reviewed and merged;
-2. the Blueprint includes the accepted hardening section;
-3. this status changes from Proposed to Verified;
-4. no conflicting hardening specification remains active.
-
-Until then, P1 remains blocked.
+This verification does not authorize production implementation. P1 remains blocked until the remaining P0 decisions are completed and the project lead explicitly authorizes P1.
