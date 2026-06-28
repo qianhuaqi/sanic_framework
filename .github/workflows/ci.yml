@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  quality:
+    name: Quality and governance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest
+      - name: Check DCO sign-offs
+        if: github.event_name == 'pull_request'
+        run: >-
+          python tests/packaging/check_dco.py
+          "${{ github.event.pull_request.base.sha }}"
+          "${{ github.event.pull_request.head.sha }}"
+
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: ubuntu-latest, python: "3.13" }
+          - { os: ubuntu-latest, python: "3.14" }
+          - { os: windows-latest, python: "3.12" }
+          - { os: windows-latest, python: "3.14" }
+          - { os: macos-latest, python: "3.12" }
+          - { os: macos-latest, python: "3.14" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: pytest
+
+  preview-python:
+    name: Python 3.15 preview
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15-dev"
+          allow-prereleases: true
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: pytest
+
+  build-and-install:
+    name: Build and clean install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install build
+      - run: python -m build
+      - run: python tests/packaging/check_artifacts.py validate dist
+      - name: Rebuild wheel from sdist
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/rebuilt"
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/rebuilt" dist/*.tar.gz
+          python tests/packaging/check_artifacts.py compare dist/*.whl "$RUNNER_TEMP"/rebuilt/*.whl
+      - name: Install wheel outside checkout
+        shell: bash
+        run: |
+          CLEAN_ENV="$RUNNER_TEMP/lingshu-clean"
+          python -m venv "$CLEAN_ENV"
+          "$CLEAN_ENV/bin/python" -m pip install --upgrade pip
+          "$CLEAN_ENV/bin/python" -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          env -u PYTHONPATH "$CLEAN_ENV/bin/python" -c "import lingshu; assert lingshu.__all__ == ()"
+          env -u PYTHONPATH "$CLEAN_ENV/bin/python" -m lingshu --version
+          env -u PYTHONPATH "$CLEAN_ENV/bin/lingshu" version
+          "$CLEAN_ENV/bin/python" -m pip uninstall -y lingshu
