@@ -1,62 +1,70 @@
 # ADR-007: Public governance, compatibility, release policy, and P0 final freeze
 
-- Status: Proposed
+- Status: Accepted when PR #51 is merged
 - Date: 2026-06-28
-- Parent architecture Issue: #25
-- Decision Issue: #49
+- Parent architecture Issue: #25 (closed by PR #51)
+- Decision Issue: #49 (closed by PR #51)
+- Decision proposal: PR #50
+- Final Freeze and P1 authorization: PR #51
+- Effective P0 freeze commit: the merge commit of PR #51
+- Detailed policies:
+  - `docs/governance/RELEASE_AND_COMPATIBILITY_POLICY.md`
+  - `docs/development/P1_IMPLEMENTATION_PLAN.md`
+  - `docs/architecture/P0_FINAL_FREEZE.md`
 
 ## Context
 
-LingShu has accepted the technical architecture needed to begin implementation. P0 cannot freeze until the repository also defines its license, contribution and conduct rules, security reporting, compatibility and release semantics, first development version, P1 scope, and explicit authorization boundary.
+LingShu completed its technical P0 decisions but could not authorize implementation without public governance, license, security reporting, compatibility rules, release controls, a first development version, an executable P1 dependency graph, and one explicit freeze event.
 
 ## Decision
 
 ### License
 
-LingShu is licensed under Apache License 2.0.
+LingShu uses Apache License 2.0.
 
-The repository includes:
+The repository contains:
 
 ```text
 LICENSE
 NOTICE
 ```
 
-Package metadata uses the SPDX identifier `Apache-2.0` after P1 creates `pyproject.toml`. Required third-party attribution is appended to NOTICE. License changes require a dedicated Issue, legal/compatibility review, and project-lead approval.
+P1 package metadata uses SPDX identifier `Apache-2.0`. Required third-party attribution is appended to NOTICE. Changing the license requires a dedicated Issue, compatibility/legal review, and project-lead approval.
 
 ### Contributions
 
 LingShu uses Developer Certificate of Origin 1.1.
 
-- every commit requires a `Signed-off-by` trailer;
+- every commit requires `Signed-off-by`;
 - `git commit -s` is the normal workflow;
 - unsigned commits block merge until corrected;
 - no Contributor License Agreement is required initially;
-- contributions are accepted under Apache-2.0 unless explicitly and validly designated otherwise before submission;
-- one Issue/branch/primary writer/worktree/environment/PR remains mandatory;
-- final merge authority remains with the project lead.
+- accepted contributions are Apache-2.0 unless validly designated otherwise before submission;
+- one Issue, one writer-prefixed branch, one primary writer, one isolated environment, and one PR remain mandatory;
+- the project lead retains final merge authority;
+- automatic merge remains prohibited.
 
 ### Code of Conduct
 
-The project adopts a LingShu-specific policy adapted from Contributor Covenant 2.1. It applies in public and private official project spaces and includes confidential reporting, conflict-of-interest handling, and proportionate enforcement.
+The repository uses a LingShu-specific policy adapted from Contributor Covenant 2.1. It applies to public and private official project spaces and includes confidential reporting, conflict-of-interest handling, proportionate enforcement, and protection against retaliation.
 
-### Security
+### Security reporting and support
 
-Private vulnerability reporting is required before the first public release.
+GitHub Private Vulnerability Reporting is the preferred channel and must be enabled before the first public release.
 
-- use GitHub Private Vulnerability Reporting as the preferred channel;
-- never publish unpatched exploit details in public Issues/PRs;
-- acknowledge credible reports within a best-effort target of 3 business days;
+- unpatched exploit details are not posted publicly;
+- credible reports have a best-effort acknowledgement target of 3 business days;
 - initial triage target is 7 business days;
-- provide material updates at least every 14 days while remediation remains active;
-- coordinate disclosure and preserve reporter credit/preferences;
-- publish advisories, changelog entries, and mitigation/migration instructions when appropriate.
+- material progress is communicated at least every 14 days while remediation remains active;
+- disclosure is coordinated;
+- reporter credit and anonymity preferences are respected where lawful and practical;
+- advisories, changelog entries, and migration/mitigation guidance are published when appropriate.
 
-Before 1.0, only the latest `0.y` minor line is supported unless otherwise announced. After 1.0, the current major's latest minor is supported, and the previous major normally receives critical/high-severity fixes for 180 days after a new major.
+Before 1.0, only the latest `0.y` minor line is supported unless otherwise announced. After 1.0, the current major's latest minor is supported; after a new major, the previous major normally receives critical/high-severity fixes for 180 days.
 
 ### Versioning
 
-LingShu follows Semantic Versioning 2.0.0, refined by project compatibility rules.
+LingShu follows Semantic Versioning 2.0.0 with stricter project rules for `0.x`.
 
 First P1 development version:
 
@@ -64,58 +72,57 @@ First P1 development version:
 0.1.0.dev0
 ```
 
-Tags use `vX.Y.Z` and corresponding prerelease forms. Package versions do not include the `v` prefix.
-
-Released versions and artifacts are immutable.
+Git tags use `vX.Y.Z` and corresponding prerelease forms. Package metadata omits the `v` prefix. Published versions, tags, and artifacts are immutable.
 
 ### Pre-1.0 compatibility
 
-Patch releases inside one `0.y` line are backward compatible except for narrowly approved security/correctness emergencies.
+Patch releases inside one `0.y` line remain backward compatible except for narrowly approved security or severe correctness emergencies.
 
-Breaking public changes:
+A breaking public change before 1.0:
 
-- require a new `0.(y+1).0` minor release;
-- must be explicit in changelog/release notes;
-- require migration guidance and contract-test updates;
-- should be deprecated for at least one released minor where practical.
+- requires a new minor release;
+- is explicit in changelog and release notes;
+- includes migration guidance;
+- updates contract tests and public export manifests;
+- avoids unrelated breakage;
+- should normally be deprecated for at least one released minor where practical.
 
-Major version zero does not authorize undocumented arbitrary breakage.
+Major version zero does not permit undocumented arbitrary breakage.
 
 ### Compatibility after 1.0
 
-- patch: backward-compatible fixes;
-- minor: backward-compatible features and deprecations;
-- major: incompatible public changes.
+- patch releases contain backward-compatible fixes;
+- minor releases contain backward-compatible features and deprecations;
+- major releases contain incompatible public changes.
 
-Normal removal requires at least two released minor versions and 180 days of deprecation. Security, data-corruption, protocol-ambiguity, privilege, or severe correctness exceptions may shorten the window with project-lead approval and explicit documentation.
+Normal removal requires at least two released minor versions and at least 180 days of deprecation. Security, data-corruption, protocol-ambiguity, privilege-boundary, audit, or severe correctness failures may use a narrow documented exception approved by the project lead.
 
 ### Public API boundary
 
-Public API includes only documented/exported names, documented CLI/configuration/wire contracts, and stable error codes. Importable private implementation is not automatically public.
+Public API consists only of documented/exported names and documented CLI, configuration, wire, package-metadata, and stable error-code contracts. Importable private implementation is not automatically public.
 
 ### Branch and release model
 
-- `main` is the only long-lived development/integration branch;
-- no long-lived `develop`;
-- work uses short-lived Issue branches;
+- `main` is the only long-lived integration branch;
+- no long-lived `develop` branch;
+- normal work uses short-lived Issue branches;
 - `release/X.Y` is allowed only as a short-lived stabilization branch;
-- release fixes merge back to `main`;
-- release PR updates version and changelog but does not publish before merge;
-- an annotated tag triggers protected CI artifact build;
+- release and security fixes merge back to `main`;
+- a release PR updates version and changelog but does not publish before merge;
+- an annotated tag triggers protected CI artifact construction;
 - authoritative artifacts are built from the tag by CI;
-- tag/version/metadata/changelog/release notes must agree;
-- failed releases are yanked/superseded, never overwritten;
-- no auto-merge.
+- tag, project version, wheel/sdist metadata, changelog, and release notes must agree;
+- defective releases are yanked or superseded, never overwritten.
 
 ### Publication credentials and provenance
 
-Before public package-index publication:
+Before a public package-index release:
 
 - use short-lived identity-based trusted publishing where supported;
-- do not store a long-lived production package-index token in CI;
-- generate and retain artifact hashes and verifiable provenance/attestation;
-- separate staging/test publication from production publication;
-- only the project lead authorizes production publication.
+- do not store long-lived production package-index credentials in CI;
+- retain artifact hashes and verifiable provenance/attestation;
+- separate test/staging publication from production publication;
+- require explicit project-lead authorization for production publication.
 
 ### Changelog
 
@@ -130,84 +137,92 @@ Fixed
 Security
 ```
 
-User-visible PRs update `Unreleased`. Released sections are dated and immutable in substance; corrections are explicit. Embargoed security entries remain private until coordinated disclosure.
+User-visible PRs update `Unreleased` unless explicitly exempted. Released sections are dated and immutable in substance. Security entries may remain embargoed until coordinated disclosure.
 
 ### P1 scope
 
-P1 is the single-Worker minimum vertical slice described in `docs/development/P1_IMPLEMENTATION_PLAN.md`.
+P1 is the single-Worker minimum vertical slice defined in `docs/development/P1_IMPLEMENTATION_PLAN.md`.
 
-P1 includes package/CI foundations, core primitives, runtime Scope/Deadline/cancellation, HTTP model, Router/Middleware, Application Kernel, minimum Runtime Record, single-Worker HTTP/1.1 Server, CLI `version/check/run --workers 1`, and clean artifact installation.
+P1 includes:
 
-P1 excludes multi-Worker Supervisor, file reload, production configuration reload, advanced streaming/body formats, official extensions, and public PyPI production release.
+- package, tooling, CI, and governance enforcement;
+- core time, identifiers, errors, and static configuration;
+- runtime Scope, Deadline, cancellation, tasks, and admission;
+- HTTP Request, Response, body, Router, and Middleware foundations;
+- Application Kernel, Revision, freeze, and lifecycle;
+- minimum Runtime Record;
+- native single-Worker HTTP/1.1 Server;
+- CLI `version`, `check`, and `run --workers 1`;
+- wheel/sdist and clean-install verification.
+
+P1 excludes:
+
+- multi-Worker Supervisor implementation;
+- listener transfer between processes;
+- development reload;
+- production configuration reload/rollout;
+- advanced streaming, multipart, uploads, and compression;
+- official integrations/extensions;
+- HTTP/2, HTTP/3, WebSocket, ASGI, and WSGI;
+- public PyPI production release.
 
 ### P1 dependency graph
 
-P1 uses symbolic Issues P1-00 through P1-10, with provider-first serial integration and limited non-overlapping parallel waves.
+P1 uses P1-00 through P1-10 with provider-first integration, exact write scopes, limited non-overlapping parallel waves, and one PR per Issue.
 
-No implementation Issue may begin before Final Freeze. The exact GitHub Issues are created only after the dedicated Final Freeze PR is merged.
+The exact executable GitHub Issues are created only after PR #51 merges. P1-00 is created first and is based on the PR #51 merge commit.
 
-### P0 Freeze Candidate
+### P0 final freeze
 
-Merging the P0-D7 decision PR:
+PR #50 created the Freeze Candidate. It did not authorize implementation.
 
-- accepts the governance proposal for finalization;
-- creates a P0 Freeze Candidate;
-- does not authorize production implementation;
-- keeps ADR-007 and Blueprint status pending final synchronization.
+The project lead's merge of PR #51:
 
-A separate Final Freeze PR must:
+1. accepts ADR-007;
+2. freezes the Blueprint;
+3. establishes the PR #51 merge commit as the final P0 commit;
+4. closes Issue #49 and parent Issue #25 through PR close directives;
+5. authorizes P1;
+6. permits P1-00 to create `pyproject.toml`, the initial `lingshu/` and `tests/` skeletons, tooling configuration, and CI workflows within its declared scope;
+7. permits later P1 Issues only after their provider dependencies merge.
 
-1. mark ADR-007 Accepted;
-2. mark the Blueprint Frozen;
-3. verify ADR-001 through ADR-007 and all control documents agree;
-4. close parent Issue #25 as completed;
-5. record the final P0 merge commit;
-6. mark `CURRENT_PHASE` as P1 authorized;
-7. authorize creation of P1 Issues and production package files;
-8. state that project-lead merge is the explicit P1 authorization.
+No approval, comment, branch commit, or PR #50 merge is a substitute for the PR #51 merge authorization.
 
-Only merger of that Final Freeze PR ends P0.
+## Final verification requirements
 
-## Required governance tests/checks
+PR #51 verifies:
 
-Before Final Freeze, verify:
-
-- LICENSE is the unmodified Apache License 2.0 text;
-- NOTICE and package-license metadata are consistent;
-- CONTRIBUTING references DCO and requires sign-offs;
-- DCO text is unmodified;
-- security reporting contains a private path and no invented public mailbox;
-- supported-version rules agree across SECURITY and release policy;
-- Code of Conduct has private reporting and conflict handling;
-- changelog categories and version rules agree;
-- Blueprint contains no Proposed technical decision from P0-D1 through D7;
-- no second architecture source conflicts with the Blueprint;
-- P1 plan respects accepted package/ownership/dependency boundaries;
-- no production source, package skeleton, dependency, or workflow exists before Final Freeze.
+- Apache License 2.0 and NOTICE are present;
+- DCO 1.1 is present and CONTRIBUTING requires sign-off;
+- private security reporting and supported-version policy are documented;
+- Code of Conduct includes confidential reporting and conflict handling;
+- changelog, SemVer, deprecation, release, and rollback rules agree;
+- ADR-001 through ADR-007 and the single Blueprint have no active contradiction;
+- the P1 plan respects package, ownership, dependency, and scope boundaries;
+- no production package, test skeleton, `pyproject.toml`, implementation workflow, runtime dependency, or executable P1 Issue existed before Final Freeze.
 
 ## Rejected alternatives
 
-- no license or placeholder license metadata;
-- initial proprietary/non-open-source licensing;
-- MIT-only proposal without the selected Apache-2.0 terms;
-- CLA requirement for ordinary initial contributions;
+- missing or placeholder license metadata;
+- initial proprietary licensing;
+- CLA-only contribution requirements;
 - unsigned contributions without DCO;
-- public vulnerability Issues as the primary channel;
-- treating all 0.x patch releases as freely breaking;
-- modifying released artifacts in place;
+- public vulnerability Issues as the primary reporting channel;
+- arbitrary breaking patch releases during `0.x`;
+- rewriting published tags or artifacts;
 - long-lived `develop`;
-- workstation-built authoritative releases;
-- long-lived package-index credentials in CI;
-- automatic P1 start merely because a proposal PR merged;
-- broad P1 implementation of multi-Worker, reload, extensions, and advanced protocols before a single-Worker vertical slice.
+- developer-workstation artifacts as authoritative releases;
+- long-lived production package-index credentials in CI;
+- auto-merge;
+- automatic P1 start after PR #50;
+- broad P1 implementation before the single-Worker vertical slice.
 
 ## Intentionally deferred
 
-- exact first public release date;
-- exact public package-index project creation timing;
-- manual cryptographic signature scheme beyond required provenance/attestation;
-- trademark registration and separate trademark policy;
-- paid support or enterprise support terms;
-- post-1.0 long-term-support branches;
-- public governance bodies beyond the project lead/contributors;
-- actual P1 code and CI implementation.
+- first public release date and package-index creation timing;
+- manual signature scheme beyond provenance/attestation;
+- trademark policy;
+- paid/enterprise support;
+- post-1.0 LTS branches;
+- governance bodies beyond project lead and contributors;
+- all implementation work assigned to P1 and later phases.
