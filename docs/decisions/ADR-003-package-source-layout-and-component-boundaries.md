@@ -1,64 +1,60 @@
 # ADR-003: Package, source layout, and component boundaries
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-06-28
 - Parent architecture Issue: #25
-- Decision Issue: #37
+- Decision Issue: #37 (completed)
+- Implemented by: PR #38
+- Effective merge commit: `66c977f435c23fc9aaa35c4f085a7ca20a81879a`
+- Detailed model: `docs/architecture/PACKAGE_AND_COMPONENT_LAYOUT.md`
 
 ## Context
 
-LingShu now has accepted decisions for repository governance and runtime concurrency. Before production implementation begins, all developers must use one physical source layout and one dependency model. Otherwise parallel contributors may create incompatible package structures, duplicate public contracts, or circular component dependencies.
+LingShu requires one physical source layout and one dependency model before production implementation begins. Without a fixed layout, concurrent developers could create incompatible package structures, duplicate public contracts, circular dependencies, and conflicting release assumptions.
 
-The project lead has explicitly rejected adding a `src/` directory. The project also favors a simple initial release surface and does not want premature multi-distribution maintenance.
+The project lead explicitly rejected adding a `src/` directory and approved a simple initial release surface without premature multi-distribution maintenance.
 
 ## Decision
 
 ### 1. One initial distribution
 
-The initial framework is published as one Python distribution:
+LingShu initially uses:
 
 ```text
-lingshu
+Repository:      qianhuaqi/lingshu
+Distribution:    lingshu
+Import package:  lingshu
+Packaging file:  pyproject.toml
+Version:         one shared framework version
 ```
 
-The import package is also:
+Core, Runtime, HTTP, Server, Runtime Record, extension mechanisms, CLI, and testing support are internal components of this one distribution. They are not separately versioned or published.
 
-```text
-lingshu
-```
+A future split requires a dedicated ADR demonstrating independent consumers, a material dependency or installation benefit, stable contracts, release ownership, compatibility rules, CI isolation, and a migration path.
 
-The initial framework implementation uses one repository-level `pyproject.toml` and one version for the distribution.
+### 2. No `src/` or initial `packages/` layout
 
-Core, Runtime, HTTP, Server, Runtime Record, extension mechanisms, CLI, and test support are internal components of this distribution, not separately versioned or published distributions.
-
-Splitting a component into another distribution later requires a dedicated ADR with evidence of independent consumers, dependency cost, release ownership, compatibility policy, and migration impact.
-
-### 2. No `src/` layout
-
-Production source is placed directly at the repository root:
+Production source is located directly at repository root:
 
 ```text
 lingshu/
 ```
 
-The repository must not create:
+The initial framework must not use:
 
 ```text
 src/lingshu/
 packages/lingshu/
 ```
 
-for the initial framework layout.
+The no-`src` choice is protected by mandatory wheel and isolated-install verification.
 
-The absence of `src/` is compensated by mandatory wheel and isolated-install verification rather than by relying on repository-root imports.
-
-### 3. Repository layout
-
-The approved target layout is:
+### 3. Target repository layout
 
 ```text
-lingshu/
+.
 ├─ lingshu/
+│  ├─ __init__.py
 │  ├─ core/
 │  ├─ runtime/
 │  ├─ http/
@@ -66,8 +62,7 @@ lingshu/
 │  ├─ record/
 │  ├─ extensions/
 │  ├─ cli/
-│  ├─ testing/
-│  └─ __init__.py
+│  └─ testing/
 ├─ tests/
 │  ├─ unit/
 │  ├─ contract/
@@ -88,119 +83,79 @@ lingshu/
 └─ AGENTS.md
 ```
 
-This ADR authorizes the layout as architecture only. The directories and files are created later by an explicitly authorized P1 implementation Issue.
+This ADR accepts the architecture only. The production directories and packaging file are created by a later explicitly authorized implementation Issue.
 
 ### 4. Component responsibilities
 
 #### `lingshu.core`
 
-Owns framework-wide stable mechanisms and contracts:
+Owns the Application Kernel, base lifecycle contracts, base exception taxonomy, configuration contracts, identifiers and immutable common values, extension protocol contracts, capability registration, and generic audit/telemetry protocols.
 
-- Application Kernel;
-- base lifecycle contracts and states;
-- base exception taxonomy;
-- configuration mechanism contracts;
-- identifiers and common immutable value types;
-- extension protocol contracts;
-- generic audit and telemetry sink protocols;
-- public capability registration contracts.
-
-`core` must not depend on another LingShu component.
+`core` depends on no other LingShu component.
 
 #### `lingshu.runtime`
 
-Owns runtime execution semantics from ADR-002:
+Owns Scope ownership, Deadline, cancellation, managed task supervision, admission control, bounded waiters, backpressure coordination, blocking-work executors, and shutdown primitives.
 
-- Scope ownership;
-- Deadline and cancellation mechanics;
-- managed task groups and task supervision;
-- admission control and bounded waiters;
-- backpressure coordination;
-- blocking-work executors;
-- shutdown coordination primitives.
-
-`runtime` may depend only on `core`.
+```text
+runtime → core
+```
 
 #### `lingshu.http`
 
-Owns HTTP application semantics independent of a specific network listener:
+Owns Request and Response semantics, headers, cookies, body and streaming contracts, routing, middleware, HTTP error mapping, and later-approved serialization/content-negotiation interfaces.
 
-- Request and Response models;
-- Headers, cookies, body and streaming contracts;
-- routing and route matching;
-- middleware pipeline;
-- HTTP exception-to-response mapping;
-- content negotiation and serialization interfaces approved later.
+```text
+http → runtime + core
+```
 
-`http` may depend on `core` and `runtime`. It must not depend on `server`, `cli`, `testing`, or concrete official integrations.
+`http` does not depend on `server`.
 
 #### `lingshu.server`
 
-Owns native network and process execution:
+Owns listeners, transports, HTTP/1.1 parser integration, connections, keep-alive, Supervisor, Worker, readiness, drain, stop, restart, crash handling, and transport flow control.
 
-- listeners and transports;
-- HTTP/1.1 parser integration;
-- connections and keep-alive;
-- Supervisor and Worker execution;
-- server startup, readiness, draining, stopping, and crash handling;
-- transport read/write flow control.
-
-`server` may depend on `core`, `runtime`, and `http`. It must not define business routing, authentication, database, tenant, or application policy.
+```text
+server → http + runtime + core
+```
 
 #### `lingshu.record`
 
-Owns the default request-level Runtime Record implementation:
+Owns the default request-level Runtime Record implementation, including event envelopes, identity mapping, parent-child ordering, redaction, truncation, bounded queues, retention, cleanup, safe local writing, and failure/flush reporting.
 
-- Request, Connection, Trace, and Operation identifiers after their standards are accepted;
-- event envelopes and parent-child ordering;
-- redaction and truncation mechanisms;
-- bounded record queues;
-- retention and cleanup contracts;
-- default safe local writer mechanism;
-- record failure and flush reporting.
+Runtime Record mechanisms ship in the default distribution because request-level auditability is a confirmed invariant. Heavy external storage exporters remain optional.
 
-`record` is installed as part of the default `lingshu` distribution because request-level auditability is a confirmed framework invariant.
+```text
+record → core + stable runtime contracts
+```
 
-Heavy external storage exporters are not core record dependencies. They attach through later extension decisions.
-
-`record` may depend on `core` and stable `runtime` contracts. Lower components interact with record behavior through protocols rather than importing storage implementations.
+Lower components interact with recording through protocols rather than concrete storage writers.
 
 #### `lingshu.extensions`
 
-Owns extension hosting and composition mechanisms:
+Owns extension registration, dependency ordering, capability binding, lifecycle integration, health, cleanup, and optional capability activation.
 
-- extension registration and discovery mechanisms;
-- dependency ordering and capability binding;
-- extension lifecycle integration;
-- health and cleanup hooks;
-- optional capability activation.
+It does not itself contain Auth, Tenant, RBAC, SQL, Redis, OpenAPI, or other policy implementations merely because they may later be extensions.
 
-It does not contain Auth, Tenant, RBAC, SQL, Redis, OpenAPI, or other policy implementations merely because those may later be extensions.
+```text
+extensions → core + runtime
+```
 
-`extensions` may depend on `core` and `runtime`. HTTP-specific extensions may use documented `http` contracts without causing `http` to depend on `extensions`.
+HTTP-specific extension implementations may use documented HTTP contracts without making `http` depend on `extensions`.
 
 #### `lingshu.cli`
 
-Owns the installed command-line interface and developer commands.
-
-`cli` calls documented framework composition and public APIs. It must not bypass lifecycle rules or import private implementation details as a shortcut.
+Owns installed command-line behavior and uses documented public composition surfaces. It must not bypass lifecycle rules or rely on private internals as shortcuts.
 
 #### `lingshu.testing`
 
-Owns framework-supported testing utilities:
+Owns test client support, fake transports, fake monotonic clocks, deterministic cancellation and task barriers, test harnesses, resource snapshots, and leak assertions.
 
-- test client contracts;
-- fake transports;
-- fake monotonic clock support;
-- deterministic cancellation and task barriers;
-- application test harnesses;
-- resource-leak assertions.
+Production components must not depend on `testing`.
 
-Production components must never depend on `testing`. Test-only third-party dependencies belong to development dependency groups, not mandatory runtime dependencies.
+### 5. Dependency rules
 
-### 5. Dependency direction
-
-The required primary direction is:
+Primary direction:
 
 ```text
 core
@@ -216,131 +171,106 @@ Side components:
 
 ```text
 record      → core + stable runtime contracts
-extensions  → core + runtime; optional documented http contracts
+extensions  → core + runtime (+ documented HTTP contracts when required)
 cli         → public composition surface
- testing    → public and explicit test-support surfaces
+testing     → public and explicit test-support surfaces
 ```
 
-The package facade or composition root may assemble components, but lower components must not import the facade to reach higher layers.
+Forbidden:
 
-Forbidden examples include:
+- dependency cycles;
+- `core` importing another LingShu component;
+- `runtime` importing higher components;
+- `http` importing `server`;
+- production code importing `testing`;
+- lower components importing the root `lingshu` facade;
+- cross-component private-module imports without an architecture decision.
 
-```text
-core → runtime/http/server/record/extensions/cli/testing
-runtime → http/server/record/cli/testing
-http → server/cli/testing
-server → cli/testing or business integrations
-production component → testing
-```
+P1 must add machine-enforced import-boundary checks.
 
-Circular imports and dependency cycles are architecture violations.
+### 6. Controlled public API
 
-### 6. Public API surface
-
-The root package `lingshu` is the controlled public facade.
-
-Only explicitly documented exports are public. No class or function name is frozen by this ADR; concrete names require later public-API decisions.
+`lingshu/__init__.py` is the controlled public facade.
 
 Rules:
 
-- root exports use an explicit `__all__`;
-- documented public subpackage imports may be supported when intentionally approved;
-- deep internal imports are not public merely because Python can import them;
-- modules or names beginning with `_` are private;
-- wildcard re-export chains are prohibited;
-- import-time side effects, connection creation, task startup, and process-global mutation are prohibited;
-- private modules may change before v1.0 without compatibility guarantees.
+- explicit `__all__`;
+- no wildcard re-export chains;
+- only intentionally documented exports are public;
+- deep imports are private unless explicitly promoted;
+- names beginning with `_` are private;
+- import time must not start tasks, create connections, open files, or mutate process-global state;
+- optional integrations must not load during `import lingshu`;
+- public exports require contract tests.
 
-### 7. Optional dependencies
+This ADR does not freeze concrete public class or function names.
 
-One distribution does not mean every integration dependency is mandatory.
+### 7. Optional dependency behavior
 
-Later approved optional capabilities may use dependency extras or extension discovery, but:
+One distribution does not make every integration mandatory.
 
-- importing `lingshu` must not require database, Redis, cloud, tracing, or authentication packages;
-- missing optional dependencies must fail only when the related capability is activated;
-- optional integrations must not be imported at top-level package import time;
-- an optional dependency must not become a hidden transitive core requirement.
+- `import lingshu` must not require database, Redis, cloud, tracing, or authentication packages;
+- optional dependencies load only when the capability is activated;
+- missing optional dependencies fail with a focused activation error;
+- optional integrations must not become hidden core requirements;
+- exact extras and the official extension catalog are decided later.
 
-The exact extras and official integration list are deferred.
-
-### 8. Tests and repository support directories
+### 8. Repository support directories
 
 - `tests/unit/`: component-local behavior;
 - `tests/contract/`: public and cross-component contracts;
-- `tests/integration/`: real component composition;
-- `tests/protocol/`: HTTP and transport protocol behavior;
-- `tests/concurrency/`: task, cancellation, backpressure, Worker, and shutdown behavior;
-- `tests/security/`: malformed input, boundary, redaction, and trust tests;
-- `tests/packaging/`: wheel, sdist, metadata, file inventory, and clean-install tests;
-- `tests/compatibility/`: supported Python and platform behavior after support policy is accepted;
-- `benchmarks/`: reproducible performance measurement, not correctness assertions;
+- `tests/integration/`: real composition;
+- `tests/protocol/`: protocol and malformed-input behavior;
+- `tests/concurrency/`: ownership, Deadline, cancellation, backpressure, Worker, shutdown, and leak behavior;
+- `tests/security/`: trust boundaries, redaction, limits, and safe defaults;
+- `tests/packaging/`: wheel, sdist, metadata, inventory, entry points, and isolated installation;
+- `tests/compatibility/`: supported Python/platform checks after the support matrix is accepted;
+- `benchmarks/`: performance measurement, not correctness evidence;
 - `fuzz/`: fuzz harnesses, corpora, and minimized regressions;
-- `examples/`: executable user examples using only public APIs;
-- `tools/`: repository maintenance tools, never imported by the runtime package;
-- `docs/`: architecture, development, API, guides, and decisions.
+- `examples/`: executable examples using public APIs only;
+- `tools/`: repository maintenance tools not imported by runtime code;
+- `docs/`: authoritative architecture, development, API, and user documentation.
 
 ### 9. Mandatory packaging quality gate
 
-Because the source package is at repository root, passing tests from the checkout is insufficient.
+Because source is located at repository root, checkout test success is insufficient.
 
-Before a package-related change is accepted, CI must:
+Packaging-related acceptance must:
 
-1. build both wheel and source distribution;
+1. build wheel and source distribution;
 2. create a fresh isolated virtual environment;
-3. install the built wheel without editable mode;
-4. change the working directory outside the repository;
-5. run import and smoke tests without repository `PYTHONPATH` injection;
-6. validate installed package file inventory and metadata;
-7. verify that excluded tests, tools, caches, secrets, and local files are not shipped;
-8. verify CLI entry points when they exist;
-9. repeat relevant checks against the source distribution;
+3. install the wheel without editable mode;
+4. run from a directory outside the repository;
+5. avoid repository `PYTHONPATH` injection;
+6. run import, smoke, and later CLI checks;
+7. validate installed file inventory and metadata;
+8. verify tests, tools, caches, secrets, and local files are not shipped;
+9. verify the source distribution can rebuild the expected wheel;
 10. test editable installation separately without treating it as release evidence.
-
-The release smoke test should use isolated interpreter behavior where practical so the current checkout cannot mask missing package files.
 
 ### 10. Version ownership
 
-The distribution has one authoritative version source. Individual internal components do not carry independent versions.
+The distribution has one authoritative version source. Internal components do not have independent version constants, release tags, or partial releases.
 
-The exact version file or metadata mechanism is deferred to the packaging implementation Issue, but duplicated manually edited version strings are prohibited.
-
-## Consequences
-
-### Benefits
-
-- direct and readable repository structure;
-- one install command and one compatibility surface;
-- lower release and dependency-management complexity;
-- clear boundaries for parallel development;
-- no premature component packaging;
-- wheel isolation tests prevent repository-root imports from hiding packaging defects;
-- future splitting remains possible through evidence-based ADRs.
-
-### Costs
-
-- all internal components share one release cadence;
-- component boundaries require import checks because distribution boundaries do not enforce them;
-- the root package can be accidentally imported from checkout unless CI isolation is strict;
-- optional integration packaging requires careful extras and lazy imports.
+The exact version-source mechanism and build backend are deferred.
 
 ## Rejected alternatives
 
-- `src/lingshu/` layout;
-- `packages/` monorepo layout for the initial framework;
+- `src/lingshu/`;
+- initial `packages/` monorepo layout;
 - multiple initial distributions such as `lingshu-core` and `lingshu-server`;
 - multiple component-level `pyproject.toml` files;
-- independent internal component versions;
+- independent component versions;
 - production components importing `lingshu.testing`;
-- considering every importable deep module part of the public API;
-- relying only on editable installation or repository-root test runs as packaging evidence.
+- treating every importable deep module as public API;
+- relying only on editable installation or checkout-root tests as packaging evidence.
 
 ## Intentionally deferred
 
-- minimum Python version;
+- minimum Python version and platform matrix;
 - build backend;
-- exact public class and function names;
-- exact optional dependency extras;
-- official extension implementations;
-- PyPI release timing;
-- public compatibility policy after v1.0.
+- exact public classes, functions, and API manifest;
+- authoritative version-file mechanism;
+- optional extras and official integration implementations;
+- first PyPI release timing;
+- post-v1.0 compatibility policy.
