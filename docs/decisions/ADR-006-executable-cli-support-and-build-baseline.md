@@ -1,56 +1,54 @@
 # ADR-006: Executable entry points, CLI, support matrix, and build baseline
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-06-28
 - Parent architecture Issue: #25
-- Decision Issue: #46
+- Decision Issue: #46 (completed)
+- Implemented by: PR #47
+- Effective merge commit: `5f89572398cee509b9571ee1fe8c20bd2f71dfeb`
+- Detailed model: `docs/architecture/EXECUTABLE_AND_BUILD_BASELINE.md`
 
 ## Context
 
-LingShu has accepted its runtime, package layout, Application Kernel, request pipeline, and hardening foundations. Before P1 creates the package skeleton, the project must decide how users start an application, how the CLI discovers application objects, how multi-Worker process ownership works, which Python/platform combinations are supported, and how artifacts are built and verified.
-
-Without this decision, implementation could accidentally mix Application and Server ownership, rely on fork-only behavior, add unsafe import expressions, confuse development reload with configuration reload, duplicate version strings, or create incompatible packaging metadata.
+LingShu required an executable and packaging baseline before P1 could create package files. The project needed one answer for startup ownership, application discovery, multi-Worker spawning, listener distribution, readiness, signals, Python/platform support, build tooling, version metadata, artifacts, and CI.
 
 ## Decision
 
-### 1. Execution ownership
-
-The responsibility boundary is:
+### Execution ownership
 
 ```text
-LingShu Application
+Application
   owns routes, middleware, extensions, configuration revision, and application lifecycle
 
 Server
-  owns one Worker event loop, listeners/transports, protocol execution, signals delegated by caller, readiness, drain, and connection shutdown
+  owns one Worker event loop, listeners/transports, protocol execution, readiness, drain, and connection shutdown
 
 Supervisor
-  owns process creation, listener binding, Worker readiness aggregation, restart budget, process signals, and final exit code
+  owns process creation, listener binding/transfer, Worker readiness aggregation, restart budget, process signals, and final exit code
 
 CLI
-  owns argument parsing, target discovery specification, configuration overrides, Supervisor construction, diagnostics, and terminal exit
+  owns argument parsing, target specification, configuration overrides, Supervisor construction, diagnostics, and terminal exit
 ```
 
-The Application does not bind sockets or create Worker processes. The internal Kernel does not import Server. CLI and the documented Server facade compose accepted lower-level contracts.
+Application does not bind sockets or supervise processes. The internal Kernel does not import Server.
 
-### 2. Public single-Worker Server API
+### Public single-Worker Server API
 
-`lingshu.server` becomes a documented public subpackage with:
+`lingshu.server` is a documented public subpackage:
 
 ```python
 from lingshu.server import Server, ServerConfig, serve
 ```
 
-Conceptual API:
+Conceptual asynchronous usage:
 
 ```python
-config = ServerConfig(host="127.0.0.1", port=8000)
-server = Server(app, config)
+server = Server(app, ServerConfig(host="127.0.0.1", port=8000))
 await server.start()
 await server.wait_closed()
 ```
 
-And a blocking helper:
+Blocking convenience:
 
 ```python
 serve(app, host="127.0.0.1", port=8000)
@@ -58,27 +56,24 @@ serve(app, host="127.0.0.1", port=8000)
 
 Rules:
 
-- `Server` is single-Worker only;
+- `Server` and `serve` are single-Worker only;
 - `ServerConfig` is immutable and validated before binding;
-- `start()` freezes an unfrozen Application before creating runtime resources;
-- freeze failure creates no listener or partial Server state;
-- programmatic `Server` does not install process-global signal handlers unless explicitly requested through a documented option;
-- `serve()` owns the event loop, installs supported main-thread signal handlers, blocks until shutdown, and cannot be called from an already running event loop;
-- repeated close/drain requests are idempotent;
-- multi-Worker Supervisor remains internal to CLI in the initial public API;
-- embedding APIs beyond this single-Worker surface are deferred.
+- startup freezes an unfrozen Application before runtime resources are created;
+- freeze/startup failure leaves no listener or partial Server state;
+- programmatic Server installs no process-global signals by default;
+- `serve` owns an event loop, may install supported main-thread signals, blocks until shutdown, and rejects invocation from an already running event loop;
+- drain/close is idempotent;
+- the initial multi-Worker Supervisor remains internal to CLI;
+- root exports remain `LingShu`, `Request`, `Response`, and `HTTPException`.
 
-The root package remains limited to `LingShu`, `Request`, `Response`, and `HTTPException`; Server APIs live in the documented `lingshu.server` subpackage.
+### Canonical CLI
 
-### 3. Canonical CLI
-
-Installation provides:
+Equivalent entry points:
 
 ```text
-lingshu
+lingshu ...
+python -m lingshu ...
 ```
-
-`python -m lingshu` is behaviorally equivalent.
 
 Initial commands:
 
@@ -88,13 +83,13 @@ lingshu check TARGET
 lingshu version
 ```
 
-`run` starts the service. `check` imports, validates, freezes, and reports diagnostics without binding a listener or starting business traffic. `version` prints the installed distribution version and supported runtime information without importing user application code.
+- `run` starts service;
+- `check` imports, validates, freezes, and reports diagnostics without binding or accepting traffic;
+- `version` reports installed version/runtime support without importing user application code.
 
-Commands such as routes, shell, generate, migrate, and plugin management are deferred.
+### Application target grammar
 
-### 4. Application target grammar
-
-The accepted target grammar is:
+Accepted grammar:
 
 ```text
 module:attribute
@@ -109,21 +104,17 @@ myapp:create_app --factory
 
 Rules:
 
-- module is a normal dotted Python module name;
-- attribute is one Python identifier, not an arbitrary expression or dotted traversal;
-- file-path targets such as `app.py:app` are not accepted initially;
-- parentheses, indexing, calls, lambdas, and evaluation expressions are prohibited;
-- CLI does not scan modules to guess an application;
-- the module must be importable in the active environment;
-- target import failure and target type mismatch use distinct diagnostics and exit codes;
-- without `--factory`, the attribute must be a `LingShu` instance;
-- with `--factory`, the attribute must be a synchronous zero-argument callable returning a `LingShu` instance;
-- async factories, parameter injection, and implicit environment arguments are deferred;
-- user module import occurs once in each Worker process and must not be relied upon as a Supervisor-side singleton.
+- module is a dotted Python module name;
+- attribute is one Python identifier;
+- file-path targets, calls, parentheses, indexing, lambdas, arbitrary expressions, dotted attribute traversal, and implicit scanning are prohibited;
+- without `--factory`, target must be a `LingShu` instance;
+- with `--factory`, target must be a synchronous zero-argument callable returning `LingShu`;
+- async/parameterized factories remain deferred;
+- each Worker imports its own target and does not inherit a mutable parent Application singleton.
 
-### 5. Run command baseline
+### Run command baseline
 
-Conceptual command:
+Conceptual usage:
 
 ```text
 lingshu run myapp.main:app \
@@ -132,7 +123,7 @@ lingshu run myapp.main:app \
   --workers 1
 ```
 
-Initial options include:
+Initial options:
 
 ```text
 --factory
@@ -147,13 +138,9 @@ Initial options include:
 --log-level
 ```
 
-Exact default numeric values are implementation tuning and remain deferred. Every effective value is reported with its source under safe diagnostic rules.
+Values pass through ADR-005 configuration precedence and validation. Exact numeric defaults remain implementation tuning.
 
-CLI overrides follow ADR-005 precedence and do not mutate the source configuration object.
-
-### 6. Profiles
-
-Initial profiles are:
+### Profiles
 
 ```text
 production
@@ -161,163 +148,138 @@ development
 test
 ```
 
-Rules:
+- `run` defaults to production;
+- `--reload` explicitly selects development;
+- development behavior is never silently enabled for production;
+- profiles select validated defaults/policies and do not bypass schemas;
+- test profile belongs to controlled test harnesses.
 
-- `run` defaults to production profile;
-- development must be explicit through `--profile development` or `--reload`;
-- `--reload` implies development profile;
-- unsafe development behavior is never enabled by ambient environment alone without a declared source;
-- profile selects validated defaults/policies but does not bypass schema validation;
-- test profile is for controlled test harnesses and is not a production listener mode.
+### Development reload
 
-Exact profile values are deferred to P1 configuration implementation.
+Development reload is process replacement, not in-process module reload and not production configuration-revision reload.
 
-### 7. Development reload
-
-Development reload is process restart, not in-process module reload and not ADR-005 configuration hot reload.
-
-Rules:
+```text
+watcher parent
+└─ one child Worker
+```
 
 - reload is single-Worker only;
-- `--reload` with `--workers > 1` fails before startup;
-- a lightweight parent watcher starts and restarts one child Worker process;
-- change events are debounced and coalesced;
-- the old child is drained/stopped within bounded time before replacement becomes authoritative;
-- import caches and application state are reset by process replacement;
-- `.git`, virtual environments, caches, build output, Runtime Record storage, and configured excluded paths are ignored;
-- reload is a development convenience with no zero-downtime or production durability guarantee;
-- production configuration revision reload remains a separate mechanism from ADR-005.
+- `--reload` with more than one Worker fails before startup;
+- changes are debounced/coalesced;
+- old child receives bounded stop before replacement becomes authoritative;
+- process replacement clears module/application state;
+- VCS, environments, caches, builds, Runtime Record storage, and configured exclusions are ignored;
+- no zero-downtime or production durability guarantee is made.
 
-### 8. Multi-Worker process model
+### Multi-Worker process model
 
-CLI multi-Worker execution uses an internal Supervisor and cross-platform spawn semantics.
+CLI multi-Worker execution uses internal Supervisor and cross-platform `spawn` semantics.
 
-Rules:
-
-- `spawn` is the semantic baseline on Linux, Windows, and macOS;
-- correctness never depends on inheriting a pre-imported mutable Application through `fork`;
-- Supervisor parses CLI/configuration and validates target syntax but does not treat a parent-imported Application instance as Worker state;
-- each Worker imports the target, creates/fetches the Application, validates/freeze it, starts one event loop, and reports its RevisionId and readiness;
-- all required Workers must report the same RevisionId before the Supervisor reports ready;
+- correctness never depends on fork inheritance;
+- Supervisor validates target/configuration but does not use a parent-imported Application as Worker state;
+- each Worker imports, resolves, validates/freezes, starts one loop/runtime, and reports RevisionId/readiness;
+- all required Workers must report the same RevisionId before readiness;
 - deterministic import/configuration/freeze failures are startup failures, not restart-loop candidates;
-- unexpected runtime Worker exits follow ADR-002 restart budgets;
-- Worker count must be a positive bounded integer;
-- dynamic autoscaling is deferred.
+- unexpected runtime exits use ADR-002 restart budgets;
+- Worker count is positive and bounded;
+- dynamic autoscaling remains deferred.
 
-### 9. Listener ownership
+### Listener ownership
 
-The Supervisor binds each configured listening socket once before Workers accept traffic.
+Supervisor binds each listener exactly once before Workers accept traffic.
 
-- binding failure occurs before readiness and has a stable exit code;
-- the bound socket is explicitly transferred/duplicated to spawned Workers through a platform-supported mechanism;
+- bind failure occurs before readiness;
+- socket descriptor/handle is explicitly transferred or duplicated to spawned Workers;
 - correctness does not depend on `SO_REUSEPORT`;
-- ephemeral port selection occurs once at Supervisor bind time;
-- Workers do not independently race to bind the same endpoint;
-- the Supervisor stops admission by closing/withdrawing listener ownership during shutdown;
-- exact descriptor/handle transfer implementation is private and platform-specific.
+- ephemeral port selection occurs once;
+- Workers do not race to bind;
+- stop-admission withdraws/closes listener ownership;
+- transfer implementation is private and platform-specific;
+- single-Worker programmatic Server binds directly.
 
-Single-Worker programmatic `Server` binds its own listener because no Supervisor exists.
-
-### 10. Readiness
+### Readiness
 
 Supervisor readiness requires:
 
-- listener successfully bound;
-- configured required Worker count started;
-- every required Worker imported and froze the same Application Revision;
-- required extensions/resources ready;
-- Runtime Record required policy available;
+- listener bound;
+- required Worker count started;
+- all required Workers report the same RevisionId;
+- required Application/extension resources ready;
+- required Runtime Record policy available;
 - no startup fatal condition.
 
-The process is not ready during startup, development child replacement, partial Worker rollout, hard disk watermark, or unresolved degraded configuration.
+Startup, development replacement, partial rollout, hard disk watermark, degraded configuration, or insufficient Workers are not-ready states. Liveness is distinct from readiness.
 
-Liveness only means the Supervisor/Worker control loop is functioning; it does not imply readiness.
+### Signals and shutdown
 
-The concrete health endpoint is deferred.
+CLI/Supervisor owns process signals.
 
-### 11. Signals and shutdown
-
-CLI/Supervisor owns process-level signal handling.
-
-- first graceful termination signal enters DRAINING and begins ADR-002 shutdown;
-- a second termination signal requests immediate hard stop;
-- graceful timeout expiration escalates to hard stop;
-- Unix SIGTERM and SIGINT are supported;
-- interactive Windows Ctrl+C is supported; additional Windows control events are best-effort according to platform capability;
-- unsupported signals are not advertised as portable behavior;
+- first termination enters graceful drain;
+- second termination requests hard stop;
+- graceful timeout escalates to hard stop;
+- Unix SIGTERM/SIGINT and interactive Windows Ctrl+C are supported according to platform capability;
+- unsupported signals are not advertised as portable;
 - SIGHUP configuration reload is deferred;
-- programmatic `Server` only installs signal handling when explicitly requested and run in the main thread.
+- programmatic Server installs signals only through explicit main-thread configuration.
 
-### 12. Exit-code contract
-
-CLI uses stable process exit codes:
+### Exit codes
 
 ```text
-0   clean requested shutdown / successful check or version
+0   clean shutdown / successful check or version
 1   uncategorized command failure
 2   CLI usage or argument error
 3   application import/discovery/type error
 4   configuration, validation, freeze, or extension-startup error
 5   listener bind or platform startup error
-6   runtime Worker fatal failure or restart-budget exhaustion
+6   fatal Worker failure or restart-budget exhaustion
 7   graceful shutdown timeout / forced hard stop
-8   Runtime Record required-policy startup failure
-70  unexpected internal CLI/Supervisor defect
+8   required Runtime Record policy unavailable
+70  unexpected CLI/Supervisor defect
 ```
 
-Signals may produce platform-specific shell status externally, but LingShu diagnostics record the internal termination reason.
+Platform shells may report signal statuses differently; LingShu records the internal termination reason.
 
-### 13. Python support
-
-Initial support is:
+### Python support
 
 ```text
-Implementation: CPython
-Minimum:        Python 3.12
-Required:       Python 3.12, 3.13, 3.14
-Preview:        Python 3.15 prerelease until final validation
+Implementation:  CPython
+Minimum:         Python 3.12
+Required:        Python 3.12, 3.13, 3.14
+Preview:         Python 3.15 prerelease until promoted
+requires-python: >=3.12
 ```
 
-`requires-python` is:
-
-```text
->=3.12
-```
-
-There is no artificial upper bound. A newly released Python minor becomes required only after passing the full compatibility gate. Preview failure is visible but non-blocking until promoted.
+No artificial upper bound is encoded. A new minor becomes required only after the full compatibility gate. Preview failures are visible but non-blocking until promotion.
 
 Initially unsupported/deferred:
 
 - Python 3.11 and older;
-- PyPy and other implementations;
+- PyPy/other implementations;
 - 32-bit Python;
-- free-threaded CPython builds;
-- embedded/minimal Python distributions without required standard-library behavior.
+- free-threaded CPython;
+- embedded/minimal distributions lacking required standard-library behavior.
 
-### 14. Platform support tiers
+### Platform support tiers
 
 Tier 1, release blocking:
 
 ```text
-64-bit Linux on a maintained mainstream distribution
-64-bit Windows on a supported Microsoft desktop/server release
-64-bit macOS on a supported Apple release
+maintained 64-bit Linux
+supported 64-bit Windows desktop/server
+supported 64-bit macOS
 ```
 
 Required architecture coverage:
 
 - Linux x86_64;
 - Windows x86_64;
-- macOS arm64;
-- macOS x86_64 and Linux arm64 are Tier 2 when CI capacity is available.
+- macOS arm64.
 
-Tier 1 failures block release. Tier 2 failures are documented and must not be silently presented as supported. Exact OS version floors are maintained in release metadata/tests rather than hard-coded forever in this ADR.
+Linux arm64 and macOS x86_64 are Tier 2 when CI capacity exists. Exact OS floors belong to maintained release metadata/tests.
 
-### 15. Build backend
+### Build backend
 
-LingShu uses Hatchling as its initial PEP 517 build backend.
-
-Conceptual configuration:
+Initial PEP 517 backend is Hatchling:
 
 ```toml
 [build-system]
@@ -325,171 +287,134 @@ requires = ["hatchling>=1.26,<2"]
 build-backend = "hatchling.build"
 ```
 
-Reasons:
+LingShu uses one root `pyproject.toml` and standard PEP 621 `[project]` metadata. `setup.py`, `setup.cfg`, and dynamic metadata are not used initially. Build-backend changes require a dedicated decision.
 
-- pure-Python package baseline;
-- direct PEP 517/621 support;
-- no `setup.py` execution model;
-- explicit artifact selection;
-- sufficiently small packaging surface.
+### Project metadata and dependencies
 
-Changing build backend requires a dedicated Issue/ADR because it affects release reproducibility and package inventory.
-
-`setup.py` and `setup.cfg` are not created initially.
-
-### 16. Project metadata
-
-The root `pyproject.toml` uses standard `[project]` metadata.
-
-Confirmed fields/concepts:
+Confirmed concepts:
 
 ```text
 name = "lingshu"
 requires-python = ">=3.12"
 readme = "README.md"
-dynamic metadata: none initially
-console script: lingshu
+dynamic metadata = none initially
+console script = lingshu
 ```
 
-License metadata remains blocked until the governance/license decision. Placeholder or misleading license declarations are prohibited.
+License metadata remains blocked until the governance/license decision. Mandatory runtime dependencies start empty unless separately approved. Development tools do not leak into runtime requirements.
 
-Runtime dependencies are empty initially unless a later dependency ADR approves one. Test, lint, type-check, build, and documentation tools are development dependencies and must not leak into mandatory runtime dependencies.
+### Authoritative version source
 
-Optional feature dependencies use coherent extras only after the corresponding capability is accepted.
+The only manually edited version is static `[project].version` in `pyproject.toml`.
 
-### 17. Authoritative version source
-
-The sole manually edited version is static `[project].version` in `pyproject.toml`.
-
-Rules:
-
+- runtime/CLI read installed metadata with `importlib.metadata.version("lingshu")`;
 - no duplicate manually maintained `__version__` literal;
-- runtime and CLI read the installed distribution version using `importlib.metadata.version("lingshu")`;
-- source checkout without installed metadata may use an explicit development fallback only in repository tooling, never silently in published runtime behavior;
-- Git tags and release artifacts must match the project version;
-- component-specific versions remain prohibited;
-- migration to SCM-derived dynamic versioning requires a later ADR.
+- Git tags/artifacts must match project version;
+- component versions remain prohibited;
+- SCM-derived dynamic versioning requires a later ADR.
 
-### 18. Console entry point
-
-Conceptual metadata:
+### Console entry point
 
 ```toml
 [project.scripts]
 lingshu = "lingshu.cli:main"
 ```
 
-`lingshu.cli:main` returns an integer exit code and does not call `os._exit`. The generated console script or `python -m lingshu` passes that code through `SystemExit` at the outer boundary.
+`main()` returns an integer code and does not call `os._exit`. `python -m lingshu` delegates to the same function. Importing CLI starts no resources and imports no user application.
 
-Importing `lingshu.cli` must not import user application modules or start runtime resources.
+### Artifact policy
 
-### 19. Artifact policy
-
-Initial releases build:
+Initial outputs:
 
 ```text
-one pure-Python wheel: py3-none-any
+one py3-none-any wheel
 one source distribution
 ```
 
-The wheel includes only approved `lingshu` package files and declared package data. It excludes tests, tools, benchmarks, fuzz corpora, caches, local configuration, Runtime Records, credentials, and development artifacts.
+Wheel includes approved package code/data only and excludes tests, tools, benchmarks, fuzz corpora, caches, local configuration, Runtime Records, credentials, secrets, and development artifacts.
 
-The sdist includes the source needed to rebuild the same wheel plus required license/governance files once accepted, README, and build metadata.
+Sdist includes the source/metadata required to rebuild the wheel plus accepted README/governance/license material.
 
-Native extensions or platform wheels require a later ADR.
+### Packaging verification
 
-### 20. Packaging verification
+Packaging-sensitive changes and releases must:
 
-Every packaging-sensitive PR/release must:
+1. build wheel and sdist in isolation;
+2. inspect metadata and inventory;
+3. create fresh environments;
+4. install wheel non-editably;
+5. test imports/CLI/smoke behavior outside checkout;
+6. rebuild wheel from sdist and compare expected metadata/inventory;
+7. avoid repository `PYTHONPATH` injection;
+8. verify forbidden files/secrets are absent;
+9. test editable installation separately;
+10. uninstall and verify package-owned files are removed.
 
-1. build wheel and sdist in isolated mode;
-2. inspect metadata and file inventory;
-3. create fresh virtual environments;
-4. install the wheel non-editably;
-5. run imports, `lingshu version`, `python -m lingshu version`, and smoke tests outside the checkout;
-6. rebuild a wheel from the sdist and compare expected metadata/inventory;
-7. verify no repository `PYTHONPATH` is present;
-8. verify unapproved files and secrets are absent;
-9. test editable installation separately for developer experience;
-10. uninstall and verify package-owned files are removed cleanly.
+CI records artifact hashes. Semantic metadata/inventory equality is the initial minimum; byte reproducibility remains a target.
 
-Artifact hashes are recorded by CI. Reproducible byte-for-byte builds are a target where tool/environment controls permit, but semantic metadata/inventory equality is the minimum initial gate.
-
-### 21. CI compatibility matrix
+### CI compatibility matrix
 
 Required pull-request matrix:
 
 ```text
 Linux:   CPython 3.12, 3.13, 3.14
-Windows: CPython 3.12 and 3.14
-macOS:   CPython 3.12 and 3.14
+Windows: CPython 3.12, 3.14
+macOS:   CPython 3.12, 3.14
 ```
 
-Preview matrix:
+Preview:
 
 ```text
-Linux: CPython 3.15 prerelease, non-blocking until promoted
+Linux: CPython 3.15 prerelease, visible and non-blocking until promoted
 ```
 
-Required checks include unit, contract, concurrency, protocol, security, packaging, import-boundary, and clean-install tests according to changed scope.
+Release candidates run expanded platform, artifact, signal/shutdown, and listener-transfer tests.
 
-Release candidates run the expanded full matrix, artifact install tests, signal/shutdown tests, and platform-specific listener transfer tests.
-
-A supported Python/platform combination cannot be removed without an Issue, migration notice, and release-policy review.
-
-### 22. Required acceptance tests
+## Required acceptance tests
 
 Implementation must test:
 
-- `Server` legal/illegal state transitions and idempotent close;
-- `serve()` event-loop ownership and main-thread signal restrictions;
-- `run`, `check`, `version`, and `python -m lingshu` parity;
-- target grammar rejection of expressions, files, traversal, calls, and implicit scanning;
-- instance/factory discovery and type validation;
-- target import once per Worker and no parent Application state inheritance;
-- spawn behavior on Tier 1 platforms;
-- single Supervisor bind and explicit listener transfer;
-- same RevisionId across ready Workers;
-- startup failure, restart budget, first/second signal, graceful timeout, and hard-stop exit codes;
-- reload single-Worker restriction and process replacement;
-- Python version guard and unsupported implementation diagnostics;
+- Server state transitions, freeze-before-bind, failed-start cleanup, signal ownership, loop restrictions, and idempotent close;
+- script/`-m` command parity;
+- strict target grammar and instance/factory validation;
+- no parent Application-state inheritance;
+- spawn behavior on Tier 1 systems;
+- one Supervisor bind and listener transfer;
+- identical RevisionId for ready Workers;
+- deterministic startup failures, restart budgets, termination escalation, and exit codes;
+- reload single-Worker restriction and child replacement;
+- Python implementation/version diagnostics;
 - Hatchling wheel/sdist metadata and inventory;
-- static version consistency with installed metadata and release tag;
-- clean non-editable install outside checkout;
-- absence of tests, tools, secrets, caches, and Runtime Records from wheel;
-- CI matrix and preview failure visibility.
+- installed version/tag consistency;
+- clean non-editable installation outside checkout;
+- absence of forbidden files from artifacts;
+- required CI matrix and visible preview result.
 
 ## Rejected alternatives
 
-- Application object directly owning process supervision;
+- Application as process Supervisor;
 - Kernel importing Server;
-- multi-Worker programmatic API in the initial root facade;
+- initial public multi-Worker root API;
 - fork-only correctness or inherited mutable Application state;
-- each Worker racing to bind the same port;
-- `SO_REUSEPORT` as correctness baseline;
-- arbitrary Python expression evaluation in application targets;
-- implicit module scanning or app guessing;
-- in-process development module reload;
-- multi-Worker development reload;
-- Python 3.11 or older as initial minimum;
-- an initial artificial Python upper bound;
-- PyPy/free-threaded/32-bit support claims without gates;
-- `setup.py` or `setup.cfg` as initial build configuration;
-- duplicated version literals;
-- dynamic versioning without a separate decision;
-- publishing tests, tools, records, credentials, or caches in the wheel;
-- treating editable installation as release evidence.
+- Worker bind races or `SO_REUSEPORT` as correctness baseline;
+- arbitrary target-expression evaluation or implicit app guessing;
+- in-process or multi-Worker development reload;
+- Python 3.11 as initial minimum;
+- unsupported PyPy/free-threaded/32-bit claims;
+- initial `setup.py`/`setup.cfg`;
+- duplicated version literals or unapproved dynamic versioning;
+- editable installation as release evidence;
+- publishing tests, tools, records, caches, credentials, or secrets in wheel.
 
 ## Intentionally deferred
 
-- exact numeric defaults for host, port, Workers, and timeouts;
-- concrete health endpoint paths;
-- SIGHUP reload and multi-Worker configuration rollout transport;
-- advanced CLI commands;
-- async or parameterized factories;
+- actual first development version and exact numeric defaults;
+- health endpoint paths;
+- SIGHUP and production multi-Worker configuration rollout transport;
+- advanced commands and async/parameterized factories;
 - public multi-Worker Supervisor API;
-- PyPy, free-threaded builds, 32-bit platforms, and additional architectures;
-- native extensions and platform wheels;
+- PyPy, free-threaded, 32-bit, extra architectures;
+- native extensions/platform wheels;
 - exact OS version floors;
 - License and public governance;
-- PyPI publication and release signing/attestation policy.
+- PyPI publication, signing, and attestation.
