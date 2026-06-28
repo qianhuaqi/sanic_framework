@@ -2,20 +2,20 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Current phase: P0-D3 - Package, Source Layout, and Component Boundaries
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: none
-Active decision Issue: none
+Active decision branch: `human/dodo/phase-p0-d3-package-layout`
+Active decision Issue: #37
 Parent architecture Issue: #25
-Status: P0-D2 accepted; awaiting next architecture decision
+Status: proposed architecture under project-lead review
 Next phase allowed: no
 
 ## Foundational fact
 
 LingShu is a completely new, independently implemented Python Web/API framework.
 
-It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or any other upper-level Web framework. The archived implementation creates no compatibility obligation.
+It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper-level Web framework. The archived implementation creates no compatibility obligation.
 
 ## Completed decisions
 
@@ -23,64 +23,77 @@ It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or any other upp
 
 Accepted through ADR-001 and PR #32.
 
-Confirmed:
-
-- one canonical repository: `qianhuaqi/lingshu`;
-- independent Issue, branch, primary writer, worktree or clone, virtual environment, and Pull Request per concurrent task;
-- declared write scopes and integration order;
-- parallel development with serial integration into `main`.
-
 ### P0-D2: Runtime concurrency
 
-Accepted through ADR-002 and PR #35 at merge commit `6809a18b0284d18fd1ee46d9af7183521a66d67c`.
+Accepted through ADR-002 and PR #35.
 
-Confirmed:
+The accepted runtime uses standard-library `asyncio` semantics, one event loop per Worker, structured task ownership, bounded admission and backpressure, absolute monotonic Deadline propagation, explicit cancellation, bounded blocking-work isolation, and ordered graceful shutdown.
 
-- standard-library `asyncio` semantics as the correctness baseline;
-- one event loop and one Application Runtime per Worker process;
-- Supervisor-managed Workers with bounded restart and crash-loop stop;
-- explicit Supervisor → Worker → Application → Connection → Request → Operation ownership;
-- request-owned tasks by default and explicitly registered long-lived background tasks;
-- no unregistered fire-and-forget tasks;
-- one active request at a time per HTTP/1.1 connection, with concurrency across connections;
-- bounded hierarchical admission, queues, executors, telemetry, and Runtime Record pipelines;
-- end-to-end backpressure;
-- absolute monotonic Deadline propagation;
-- explicit cancellation reasons and parent-to-child propagation;
-- bounded thread/process isolation for blocking and CPU-heavy work;
-- ordered graceful shutdown with hard-stop escalation;
-- context isolation, observability, leak gates, and concurrency stress tests.
+## Active decision proposal
 
-## Still unresolved
+### P0-D3: Package and component layout
 
-- one distribution versus multiple distributions inside the single repository;
-- `packages/` versus another repository layout;
-- direct `lingshu/` versus `src/`;
-- exact Core, HTTP, Server, Record, CLI, testing, and extension boundaries;
-- Runtime Record default installation and physical placement;
-- official built-in versus optional capabilities;
-- Python and platform support range;
-- public API names and numeric runtime defaults;
-- listener distribution and HTTP/2/HTTP/3 semantics;
-- release, compatibility, license, contribution, and security policies.
+The project lead has rejected adding a `src/` directory.
 
-## Recommended next decision
+The proposal defines:
 
-P0-D3 should decide packaging, source layout, and component boundaries:
+- one Python distribution: `lingshu`;
+- one import package: `lingshu`;
+- one root `pyproject.toml`;
+- production source directly under root-level `lingshu/`;
+- no `src/` and no `packages/` layout;
+- internal components: `core`, `runtime`, `http`, `server`, `record`, `extensions`, `cli`, and `testing`;
+- one shared framework version and release cadence;
+- default inclusion of Runtime Record mechanisms;
+- explicit dependency direction and cycle prohibition;
+- controlled root public facade and explicit exports;
+- optional integrations loaded lazily without becoming core dependencies;
+- root-level tests, docs, examples, tools, benchmarks, and fuzz directories;
+- mandatory wheel/sdist clean-install tests outside the repository checkout.
 
-1. one distribution or multiple distributions;
-2. direct `lingshu/` or `src/lingshu/`;
-3. one or multiple `pyproject.toml` files;
-4. Core, HTTP, Server, Record, CLI, Testing, and Extensions physical boundaries;
-5. public imports and dependency direction;
-6. test, benchmark, fuzz, example, and tooling directory placement.
+Detailed proposal:
+
+- `docs/decisions/ADR-003-package-source-layout-and-component-boundaries.md`
+- `docs/architecture/PACKAGE_AND_COMPONENT_LAYOUT.md`
+
+## Explicitly unresolved
+
+P0-D3 does not decide:
+
+- minimum Python version;
+- build backend;
+- exact public application, request, response, Scope, Deadline, limiter, or cancellation names;
+- exact authoritative version-file mechanism;
+- optional dependency extras and official integration catalog;
+- first PyPI release timing;
+- post-v1.0 compatibility policy.
+
+## Current objective
+
+1. review the single-distribution and root-level package proposal;
+2. confirm component responsibilities and dependency direction;
+3. confirm the public/private API rules;
+4. confirm isolated wheel and sdist quality gates;
+5. open a documentation-only Pull Request;
+6. keep P1 blocked.
 
 ## Out of scope
 
+- creating `lingshu/`, `tests/`, or `pyproject.toml`;
 - production framework implementation;
-- source package or directory skeleton creation;
 - runtime dependency introduction;
 - package publication;
 - starting P1.
 
-P1 remains blocked until all P0 exit conditions are satisfied and the project lead explicitly authorizes it.
+## Exit conditions for P0-D3
+
+1. ADR-003 and the detailed layout document are reviewed and merged;
+2. one distribution, one import package, and one root packaging file are explicit;
+3. no-`src` and root-level `lingshu/` are explicit;
+4. component boundaries and dependency rules are explicit;
+5. public export and optional dependency rules are explicit;
+6. clean wheel/sdist installation gates are explicit;
+7. deferred decisions remain unresolved;
+8. the project lead performs the final merge.
+
+P0 continues after P0-D3. P1 remains blocked.
