@@ -1,6 +1,7 @@
 # LingShu P0 Final Freeze Record
 
-- Status: Effective when the carrying Final Freeze Pull Request is merged to `main`
+- Status: Effective when PR #51 is merged to `main`
+- Final Freeze Pull Request: #51
 - Freeze candidate source: PR #50
 - P0 decision Issue: #49
 - Parent architecture Issue: #25
@@ -9,13 +10,13 @@
 
 ## Authorization event
 
-The project lead's merge of the Pull Request carrying this record is the sole P0 completion and P1 authorization event.
+The project lead's merge of PR #51 is the sole P0 completion and P1 authorization event.
 
-The merge commit of that Pull Request is the authoritative final P0 commit. No earlier branch commit, approval, comment, or Freeze Candidate authorizes implementation.
+The merge commit of PR #51 is the authoritative final P0 commit. No earlier branch commit, approval, comment, or Freeze Candidate authorizes implementation.
 
 ## Frozen decision set
 
-The following decisions are accepted and frozen as the P1 implementation baseline:
+The following decisions are accepted and frozen as the P1 implementation baseline when PR #51 merges:
 
 ```text
 ADR-001  repository and concurrent-development governance
@@ -35,7 +36,7 @@ A change to a frozen decision requires a dedicated Issue and a new ADR that expl
 
 - [x] `LINGSHU_FRAMEWORK_BLUEPRINT.md` is the only overall architecture entry point.
 - [x] ADR-001 through ADR-007 have no contradictory active proposal.
-- [x] `P0_DECISION_STATUS.md`, `CURRENT_PHASE.md`, and `HANDOFF.md` point to the same accepted baseline.
+- [x] `P0_DECISION_STATUS.md`, `CURRENT_PHASE.md`, and `HANDOFF.md` point to the same accepted baseline on this branch.
 - [x] the archived legacy branch remains historical reference only.
 
 ### Package and dependency boundary
@@ -77,7 +78,7 @@ A change to a frozen decision requires a dedicated Issue and a new ADR that expl
 - [x] P1 is a single-Worker minimum vertical slice.
 - [x] P1-00 through P1-10 have provider-first dependencies, write-scope guidance, parallel waves, and acceptance criteria.
 - [x] multi-Worker Supervisor, reload, advanced protocols/body formats, official integrations, and public publication are excluded.
-- [x] P1 implementation starts with P1-00 only after this Final Freeze PR merges.
+- [x] P1 implementation starts with P1-00 only after PR #51 merges.
 
 ### Repository state before authorization
 
@@ -89,7 +90,7 @@ A change to a frozen decision requires a dedicated Issue and a new ADR that expl
 
 ## Effect of merge
 
-When this record reaches `main` through the Final Freeze PR:
+When PR #51 reaches `main`:
 
 1. P0 is complete and frozen.
 2. ADR-007 is Accepted.
@@ -108,7 +109,7 @@ After merge, create only P1-00 first:
 P1-00：建立 package、tooling、CI 与治理门禁基础
 ```
 
-P1-00 must be based on the Final Freeze merge commit and must not implement framework behavior beyond the accepted package/tooling foundation.
+P1-00 must be based on the PR #51 merge commit and must not implement framework behavior beyond the accepted package/tooling foundation.
 
 ## Not authorized by this freeze
 
