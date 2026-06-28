@@ -1,9 +1,11 @@
 # ADR-001: Single repository and concurrent development model
 
-- Status: Accepted by project-lead decision; pending Pull Request merge
+- Status: Accepted
 - Date: 2026-06-28
 - Parent architecture Issue: #25
-- Decision Issue: #31
+- Decision Issue: #31 (completed)
+- Implemented by: PR #32
+- Effective merge commit: `92d6c0795fd5a6d21841a8ac3a1896d703809e40`
 
 ## Context
 
