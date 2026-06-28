@@ -100,7 +100,7 @@ Prefer focused commits with imperative subjects, for example:
 ```text
 feat(router): add deterministic static-route matching
 fix(runtime): preserve cancellation during cleanup
- docs(governance): define release policy
+docs(governance): define release policy
 ```
 
 Fixup commits are acceptable during review, but the final history must remain understandable. Rewriting a shared branch requires explicit agreement from all affected writers.
