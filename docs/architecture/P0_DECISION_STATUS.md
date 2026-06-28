@@ -2,7 +2,8 @@
 
 - Status: Active P0 control document
 - Parent Issue: #25
-- Active decision Issue: none
+- Active decision Issue: #46
+- Active proposal: P0-D6 / ADR-006
 - Last accepted decision: P0-D5 / ADR-005 / PR #44
 - Last updated: 2026-06-28
 
@@ -22,124 +23,153 @@ Single repository and concurrent-development governance are accepted through ADR
 
 ### P0-D2
 
-Runtime concurrency is accepted through ADR-002 / PR #35:
-
-- standard-library `asyncio` correctness baseline;
-- one event loop and Application Runtime per Worker;
-- structured task ownership;
-- bounded resources and backpressure;
-- absolute monotonic Deadline and cancellation propagation;
-- bounded Worker restart and graceful shutdown.
+Runtime concurrency is accepted through ADR-002 / PR #35: standard-library `asyncio`, one loop/runtime per Worker, structured task ownership, bounded resources, monotonic Deadline, cancellation propagation, restart budgets, and graceful shutdown.
 
 ### P0-D3
 
-Package and component layout are accepted through ADR-003 / PR #38:
+Package/component layout is accepted through ADR-003 / PR #38:
 
 ```text
-Repository:      qianhuaqi/lingshu
 Distribution:    lingshu
 Import package:  lingshu
-Packaging file:  pyproject.toml
 Production code: lingshu/
 src layout:      prohibited
 ```
 
-One version, one release cadence, controlled root facade, no initial component distributions, and machine-enforced dependency boundaries are confirmed.
+One root `pyproject.toml`, one version/release cadence, controlled facade, and acyclic component dependencies are confirmed.
 
 ### P0-D4
 
-Application Kernel and request pipeline are accepted through ADR-004 / PR #41:
-
-- public `LingShu` composition root and private Kernel;
-- immutable Application Revision and atomic freeze;
-- deterministic Router and Middleware;
-- asynchronous Handler with explicit Request;
-- fixed request pipeline;
-- immutable Request metadata and bounded body;
-- exactly-once response normalization;
-- irreversible Response commit boundary;
-- deterministic exception mapping;
-- root exports `LingShu`, `Request`, `Response`, and `HTTPException`.
+Application Kernel and request pipeline are accepted through ADR-004 / PR #41: public `LingShu`, immutable revisions/plans, deterministic routing/middleware, async Handler, fixed request pipeline, bounded Request body, irreversible Response commit, deterministic exception mapping, and root exports `LingShu`, `Request`, `Response`, `HTTPException`.
 
 ### P0-D5
 
-Hardening Foundations are accepted through ADR-005 / PR #44 at merge commit `704146f103e2daafac7e489951497411821e9ba9`.
+Hardening Foundations are accepted through ADR-005 / PR #44:
 
-Confirmed:
+- typed identifiers and separate wall/monotonic time;
+- stable error codes and safe problem responses;
+- strict versioned configuration with protected values and atomic reload;
+- bounded strict UTF-8 JSON and negotiation;
+- Runtime Record reservation, append-only events, local segments, budgets, watermarks, retention, and recovery;
+- common telemetry/redaction/cardinality rules;
+- verified hardening integration mapping.
 
-- separate wall-clock and monotonic time semantics;
-- typed opaque runtime identifiers and SHA-256 Revision identifiers;
-- internal RequestId cannot be replaced by inbound correlation;
-- stable dotted error codes and safe problem responses;
-- deterministic configuration precedence, schema versions, protected values, immutable snapshots, reload, and rollback;
-- strict bounded UTF-8 JSON and explicit content negotiation;
-- Runtime Record reservation before business handling;
-- versioned append-only event envelopes and JSON Lines segments;
-- declared durability, bounded storage, disk watermarks, retention, and crash recovery;
-- common telemetry fields, shared redaction rules, and bounded metric dimensions;
-- the former Hardening Checklist is now a Verified integration mapping only.
+## Proposed — P0-D6, not executable until merged
 
-Detailed model:
+Issue #46 and ADR-006 propose:
 
-- `docs/decisions/ADR-005-hardening-foundations.md`
-- `docs/architecture/HARDENING_FOUNDATIONS.md`
-- `docs/architecture/P0_HARDENING_CHECKLIST.md`
+### Execution ownership
+
+- Application owns application definitions/revision/lifecycle plan;
+- public single-Worker Server owns one loop/runtime/listener/protocol/drain;
+- internal Supervisor owns process spawn, one-time listener binding/transfer, Worker readiness/restarts, signals, and exit;
+- CLI owns arguments, target specification, overrides, Supervisor construction, diagnostics, and terminal exit.
+
+### Public Server surface
+
+Documented public subpackage:
+
+```python
+from lingshu.server import Server, ServerConfig, serve
+```
+
+`Server` and `serve` are single-Worker only. Root exports remain unchanged. Multi-Worker Supervisor remains internal to CLI initially.
+
+### CLI and discovery
+
+```text
+lingshu run module:app
+lingshu run module:create_app --factory
+lingshu check module:app
+lingshu version
+python -m lingshu ...
+```
+
+- target grammar is strict `module:attribute`;
+- no file paths, expressions, calls, dotted attribute traversal, or implicit scanning;
+- instance mode requires `LingShu`;
+- factory mode requires synchronous zero-argument callable returning `LingShu`;
+- production/development/test profiles;
+- development reload is one-child process restart and cannot be multi-Worker.
+
+### Processes, listener, readiness, and shutdown
+
+- cross-platform `spawn` semantic baseline;
+- each Worker independently imports/freezes target and reports RevisionId;
+- Supervisor binds listener once and explicitly transfers it;
+- no correctness dependency on fork or `SO_REUSEPORT`;
+- readiness requires listener, required Workers, identical RevisionId, ready resources/extensions, and available required Runtime Record policy;
+- first termination begins drain; second or timeout forces hard stop;
+- stable exit-code catalog 0,1,2,3,4,5,6,7,8,70.
+
+### Python/platform support
+
+```text
+Implementation: CPython
+Minimum:        3.12
+Required:       3.12, 3.13, 3.14
+Preview:        3.15 prerelease
+requires-python: >=3.12
+```
+
+Tier 1: maintained 64-bit Linux, supported 64-bit Windows, and supported 64-bit macOS. PyPy, free-threaded, 32-bit, and other interpreters remain deferred.
+
+### Build/version/artifacts
+
+- Hatchling PEP 517 backend;
+- standard root `[project]` metadata;
+- no `setup.py`/`setup.cfg` initially;
+- static `[project].version` is the only manually edited version;
+- runtime/CLI reads installed version via `importlib.metadata`;
+- console script `lingshu = "lingshu.cli:main"`;
+- one `py3-none-any` wheel and one sdist;
+- clean-install/outside-checkout/inventory/metadata/sdist-rebuild tests;
+- required CI: Linux 3.12/3.13/3.14, Windows 3.12/3.14, macOS 3.12/3.14;
+- Linux 3.15 prerelease visible non-blocking preview.
+
+Proposal documents:
+
+- `docs/decisions/ADR-006-executable-cli-support-and-build-baseline.md`
+- `docs/architecture/EXECUTABLE_AND_BUILD_BASELINE.md`
 
 ## Rejected principles
 
-- dependence on another upper-level Web framework;
-- legacy runtime migration as the new implementation;
-- `src/lingshu/` or initial multi-distribution packaging;
-- shared writable development directories or automatic merge;
-- unbounded tasks, queues, records, or disk;
-- global mutable request state;
-- timeout reset at nested layers;
-- concurrent HTTP/1.1 requests on one connection;
-- import-time registration or running-plan mutation;
-- unordered Middleware or multiple `call_next` calls;
-- implicit tuple/None response conventions;
-- multiple Response commits;
-- trusting inbound request identifiers as internal identifiers;
-- exposing raw internal failures to clients;
-- mutable partial configuration reload;
-- permissive or arbitrary-object JSON encoding;
-- reporting complete audit after record loss;
-- high-cardinality identifiers as metric labels;
-- wall-clock time for Deadline measurement.
+Previously rejected principles remain rejected. P0-D6 additionally rejects:
+
+- Application as process Supervisor;
+- Kernel importing Server;
+- initial public multi-Worker root API;
+- fork-only correctness or inherited mutable Application state;
+- Worker port-bind races or required `SO_REUSEPORT`;
+- arbitrary target expression evaluation or implicit app discovery;
+- in-process development reload or multi-Worker reload;
+- Python 3.11 as initial minimum;
+- unsupported PyPy/free-threaded/32-bit claims;
+- initial `setup.py`/`setup.cfg`;
+- duplicate version literals or unapproved dynamic versioning;
+- editable installation as release evidence;
+- shipping tests/tools/records/secrets/caches inside the wheel.
 
 ## Candidate — not executable
 
-### Recommended next decision: P0-D6
+### Later framework decisions
 
-P0-D6 should define the executable and packaging baseline:
-
-- public startup and serve API;
-- CLI commands and application discovery;
-- production/development execution and reload boundary;
-- Worker/process options, signals, readiness, and exit codes;
-- minimum Python and supported-platform matrix;
-- build backend and authoritative version source;
-- package metadata, console entry point, wheel/sdist, and CI matrix;
-- startup, discovery, signal, packaging, and clean-install tests.
-
-### Later decisions
-
-- numeric defaults and environment profiles;
-- advanced routing and body formats;
+- numeric defaults and concrete health endpoints;
+- SIGHUP and multi-Worker configuration rollout transport;
+- advanced routing/body formats;
 - sync Handler adaptation and dependency injection;
-- official capabilities and extensions;
-- HTTP/2, HTTP/3, and optional accelerators;
-- release, compatibility, contribution, security, changelog, and code-of-conduct policy;
-- final P0 freeze and P1 authorization.
+- official capabilities/extensions;
+- HTTP/2, HTTP/3, accelerators, additional runtimes/platforms;
+- public multi-Worker Supervisor API.
+
+### Governance and P0 completion
+
+- License, contribution, security disclosure/support, changelog, code of conduct, release/version policy;
+- first public release and artifact signing/attestation;
+- P1 scope, v0.x mapping, final Blueprint freeze, and explicit P1 authorization.
 
 ## Confirmation rule
 
-A proposal becomes Confirmed only after:
-
-1. a dedicated Issue;
-2. Blueprint amendment or accepted ADR;
-3. explicit project-lead confirmation;
-4. reviewed and merged Pull Request;
-5. this register is synchronized.
+A proposal becomes Confirmed only after a dedicated Issue, ADR/Blueprint amendment, explicit project-lead confirmation, reviewed/merged PR, and synchronization of this register.
 
 P1 remains blocked until all P0 exit conditions are met.
