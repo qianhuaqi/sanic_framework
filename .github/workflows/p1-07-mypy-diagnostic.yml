@@ -23,56 +23,32 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           path = Path("lingshu/record/model.py")
-          text = path.read_text()
-          replacements = {
-              '''        if self.event_count >= self.budgets.max_events_per_record:
-              return self._drop_or_raise(
-                  "record.event_limit_exceeded",
-                  "The Runtime Record event limit was exceeded.",
+          lines = path.read_text().splitlines()
+
+          starts = [
+              index
+              for index, line in enumerate(lines)
+              if line == "            return self._drop_or_raise("
+          ]
+          if len(starts) != 3:
+              raise SystemExit(f"expected three drop-return sites, found {len(starts)}")
+          for start in reversed(starts):
+              lines[start] = "            self._drop_or_raise("
+              end = next(
+                  index
+                  for index in range(start + 1, len(lines))
+                  if lines[index] == "            )"
               )
-          ''': '''        if self.event_count >= self.budgets.max_events_per_record:
-              self._drop_or_raise(
-                  "record.event_limit_exceeded",
-                  "The Runtime Record event limit was exceeded.",
-              )
-              return None
-          ''',
-              '''        if len(payload) > self.budgets.max_event_bytes:
-              return self._drop_or_raise(
-                  "record.event_too_large",
-                  "A Runtime Record event exceeds its configured limit.",
-              )
-          ''': '''        if len(payload) > self.budgets.max_event_bytes:
-              self._drop_or_raise(
-                  "record.event_too_large",
-                  "A Runtime Record event exceeds its configured limit.",
-              )
-              return None
-          ''',
-              '''        if self.record_bytes + len(payload) > self.budgets.max_record_bytes:
-              return self._drop_or_raise(
-                  "record.record_too_large",
-                  "The Runtime Record exceeds its configured limit.",
-              )
-          ''': '''        if self.record_bytes + len(payload) > self.budgets.max_record_bytes:
-              self._drop_or_raise(
-                  "record.record_too_large",
-                  "The Runtime Record exceeds its configured limit.",
-              )
-              return None
-          ''',
-              '''    available: bool
-          ''': '''    @property
-              def available(self) -> bool:
-                  """Return whether reserved capacity remains available."""
-                  ...
-          ''',
-          }
-          for old, new in replacements.items():
-              if text.count(old) != 1:
-                  raise SystemExit("mypy repair target count is not one")
-              text = text.replace(old, new, 1)
-          path.write_text(text)
+              lines.insert(end + 1, "            return None")
+
+          protocol_index = lines.index("    available: bool")
+          lines[protocol_index : protocol_index + 1] = [
+              "    @property",
+              "    def available(self) -> bool:",
+              '        """Return whether reserved capacity remains available."""',
+              "        ...",
+          ]
+          path.write_text("\n".join(lines) + "\n")
           PY
           python -m pip install -q "ruff>=0.8,<1" "mypy>=1.11,<2"
           ruff format lingshu/record tests/record tests/test_package_baseline.py
