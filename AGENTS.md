@@ -15,11 +15,12 @@ Before any work, read:
 1. `docs/development/DEVELOPMENT_CONSTITUTION.md`;
 2. the active GitHub Issue;
 3. `docs/development/CURRENT_PHASE.md`;
-4. `docs/architecture/P0_DECISION_STATUS.md` during P0;
-5. accepted ADRs under `docs/decisions/`;
-6. confirmed sections of `docs/architecture/LINGSHU_FRAMEWORK_BLUEPRINT.md`;
-7. `docs/development/HANDOFF.md`;
-8. the active remote branch and Pull Request.
+4. `docs/development/CONCURRENT_DEVELOPMENT.md` when any other task is active;
+5. `docs/architecture/P0_DECISION_STATUS.md` during P0;
+6. accepted ADRs under `docs/decisions/`;
+7. confirmed sections of `docs/architecture/LINGSHU_FRAMEWORK_BLUEPRINT.md`;
+8. `docs/development/HANDOFF.md`;
+9. the active remote branch and Pull Request.
 
 Chat history, model memory, archived branches, closed legacy Issues, and historical Pull Requests are not active implementation authority.
 
@@ -36,7 +37,26 @@ Until the project lead confirms the complete Blueprint and a P1 Issue is created
 - introduce runtime dependencies;
 - implement Core, HTTP runtime, native server, router, middleware, extension runtime, CLI, or official extensions;
 - publish packages;
-- treat candidate package, multi-package, `src/`, directory, extension, or release plans as frozen.
+- treat candidate package, multi-package, `src/`, directory, extension, runtime-concurrency, or release plans as frozen.
+
+## Single repository and concurrent work
+
+The canonical repository is `qianhuaqi/lingshu`.
+
+Single repository does not mean shared branch or shared working directory. For concurrent work:
+
+- one task uses one Issue, one writer-prefixed branch, one primary writer, one worktree or clone, one virtual environment, and one Pull Request;
+- every Issue declares `base_commit`, `write_scope`, dependencies, conflicts, integration order, and required checks;
+- two active tasks with overlapping write scopes are conflicting by default;
+- shared public contracts and foundations merge before dependent features;
+- multiple developers must not write in the same worktree;
+- multiple primary writers must not write the same branch;
+- parallel development is allowed only for independent tasks;
+- integration into `main` is serial and controlled by the project lead;
+- after a relevant upstream merge, dependent branches synchronize with current `main` and rerun checks;
+- no developer may copy uncommitted code, stashes, caches, or virtual environments between task worktrees.
+
+Use `docs/development/CONCURRENT_DEVELOPMENT.md` and ADR-001 as the operational authority.
 
 ## Workflow
 
@@ -56,9 +76,9 @@ Until the project lead confirms the complete Blueprint and a P1 Issue is created
 
 Candidate text is not executable architecture.
 
-In particular, the current Blueprint contains proposed package, distribution, directory, and `src/` layouts that remain unresolved until the project lead confirms them in GitHub. Use `docs/architecture/P0_DECISION_STATUS.md` to determine which decisions are confirmed, rejected, or still open.
+The current Blueprint contains unresolved distribution, directory, `src/`, component-boundary, extension, runtime-concurrency, and release choices. Use `docs/architecture/P0_DECISION_STATUS.md` to determine which decisions are confirmed, rejected, or still open.
 
-No developer may create P1 directories from an unresolved Blueprint section.
+No developer may create P1 directories or runtime code from an unresolved Blueprint section.
 
 ## Dependency gate
 
