@@ -60,10 +60,13 @@ def test_entropy_failure_becomes_safe_internal_error() -> None:
     assert "/private/key" not in str(error)
 
 
-def test_entropy_source_must_return_exact_bytes() -> None:
-    for value in (b"short", b"long" * 8):
-        with pytest.raises(InternalError):
-            RequestId.generate(lambda _: value)
+@pytest.mark.parametrize("value", [b"short", b"long" * 8])
+def test_entropy_source_must_return_exact_bytes(value: bytes) -> None:
+    def source(_: int) -> bytes:
+        return value
+
+    with pytest.raises(InternalError):
+        RequestId.generate(source)
 
 
 def test_revision_id_is_deterministic_sha256() -> None:

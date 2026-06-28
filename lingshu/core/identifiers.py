@@ -15,7 +15,7 @@ _LOWER_HEX_128 = re.compile(r"^[0-9a-f]{32}$")
 _LOWER_HEX_256 = re.compile(r"^[0-9a-f]{64}$")
 _EXTERNAL_REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]+$")
 
-EntropySource = Callable[[int], bytes]
+type EntropySource = Callable[[int], bytes]
 
 
 @dataclass(frozen=True, slots=True)

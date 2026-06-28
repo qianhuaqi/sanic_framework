@@ -7,13 +7,12 @@ import re
 from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
-from typing import TypeAlias
 
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 
-SafeScalar: TypeAlias = str | int | float | bool | None
-SafeValue: TypeAlias = SafeScalar | tuple["SafeValue", ...] | Mapping[str, "SafeValue"]
-SafeDetails: TypeAlias = Mapping[str, SafeValue]
+type SafeScalar = str | int | float | bool | None
+type SafeValue = SafeScalar | tuple[SafeValue, ...] | Mapping[str, SafeValue]
+type SafeDetails = Mapping[str, SafeValue]
 
 
 class Severity(StrEnum):
@@ -51,7 +50,7 @@ def freeze_safe_value(value: object) -> SafeValue:
     non-string keys, bytes, and non-finite floats are rejected.
     """
 
-    if value is None or isinstance(value, (str, bool, int)):
+    if value is None or isinstance(value, str | bool | int):
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
@@ -64,7 +63,7 @@ def freeze_safe_value(value: object) -> SafeValue:
                 raise TypeError("safe detail mapping keys must be strings")
             frozen[key] = freeze_safe_value(item)
         return MappingProxyType(frozen)
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return tuple(freeze_safe_value(item) for item in value)
     raise TypeError(f"unsupported safe detail value type: {type(value).__name__}")
 
