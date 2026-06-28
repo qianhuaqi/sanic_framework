@@ -2,26 +2,24 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0-D5 - Hardening Foundations
+Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: `human/dodo/phase-p0-d5-hardening-foundations`
-Active decision Issue: #43
+Active decision branch: none
+Active decision Issue: none
 Parent architecture Issue: #25
-Status: proposed architecture under project-lead review
+Status: P0-D5 accepted; awaiting next architecture decision
 Next phase allowed: no
 
 ## Foundational fact
 
-LingShu is a completely new, independently implemented Python Web/API framework.
-
-It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper-level Web framework. The archived implementation creates no compatibility obligation.
+LingShu is a completely new and independently implemented Python Web/API framework. It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper-level Web framework. The archived implementation creates no compatibility obligation.
 
 ## Completed decisions
 
 ### P0-D1
 
-Repository and development concurrency accepted through ADR-001 / PR #32.
+Repository and concurrent-development governance accepted through ADR-001 / PR #32.
 
 ### P0-D2
 
@@ -40,81 +38,64 @@ src layout:      prohibited
 
 ### P0-D4
 
-Application Kernel and request pipeline accepted through ADR-004 / PR #41.
-
-Confirmed minimum facade:
+Application Kernel, request pipeline, and minimum public facade accepted through ADR-004 / PR #41.
 
 ```python
 from lingshu import LingShu, Request, Response, HTTPException
 ```
 
-## Active proposal: P0-D5
+### P0-D5
 
-The proposal defines:
+Hardening Foundations accepted through ADR-005 / PR #44 at merge commit `704146f103e2daafac7e489951497411821e9ba9`.
 
-- separate UTC wall-clock and process-local monotonic time semantics;
-- typed 128-bit opaque Request, Connection, Trace, Operation, Worker, and Record identifiers;
-- SHA-256 Application Revision identifiers;
-- internal Request ID generation regardless of inbound correlation headers;
-- stable lowercase dotted framework error codes;
-- safe `application/problem+json` client errors;
-- configuration precedence, schema versioning, secret redaction, immutable Snapshots, reload, and rollback;
-- strict UTF-8 JSON, duplicate-key and NaN/Infinity rejection, bounded parsing, and explicit custom serializers;
-- 406/415 content-negotiation behavior;
+Confirmed:
+
+- separate UTC wall-clock and monotonic time semantics;
+- typed opaque Request, Connection, Trace, Operation, Worker, Record, and Revision identifiers;
+- internal RequestId cannot be replaced by inbound correlation;
+- stable dotted error codes and safe `application/problem+json` responses;
+- deterministic configuration precedence, schema versions, secret redaction, immutable snapshots, reload, and rollback;
+- strict bounded UTF-8 JSON and explicit content negotiation;
 - Runtime Record reservation before business handling;
-- versioned append-only event envelopes;
-- JSON Lines local segments, atomic manifests, durability policies, budgets, retention, disk watermarks, and crash recovery;
-- shared telemetry fields, redaction classes, and metric-cardinality rules;
-- conversion of the old Hardening Checklist into an integration verification record.
+- versioned append-only event envelopes and JSON Lines local segments;
+- declared durability, bounded queues/storage, disk watermarks, retention, and crash recovery;
+- common telemetry fields, shared redaction classes, and metric-cardinality restrictions;
+- the former Hardening Checklist is now a Verified integration record, not a second architecture source.
 
-Detailed proposal:
+## Still unresolved
 
-- `docs/decisions/ADR-005-hardening-foundations.md`
-- `docs/architecture/HARDENING_FOUNDATIONS.md`
+- public server startup and shutdown API;
+- CLI command model, application discovery, development reload, and exit codes;
+- minimum Python version and supported operating systems;
+- build backend, authoritative version source, package metadata, and CI matrix;
+- default numeric limits and environment profiles;
+- automatic HEAD/OPTIONS, host routing, reverse routing, mounts, and sub-applications;
+- forms, multipart, uploads, compression, and streaming serialization;
+- sync Handler adaptation and dependency injection;
+- official capabilities and extensions;
+- release, compatibility, license, contribution, security, changelog, and code-of-conduct policy;
+- final P0 freeze and P1 implementation plan.
 
-## Explicitly unresolved
+## Recommended next decision
 
-P0-D5 does not decide:
+P0-D6 should decide the executable and packaging baseline:
 
-- exact numeric limits, retention periods, or fsync frequency;
-- configuration file syntax;
-- secret-provider implementations;
-- multi-Worker reload transport or consensus mechanism;
-- full form, multipart, upload, compression, and streaming serialization;
-- concrete logging, metrics, tracing, database, or object-storage backends;
-- OpenTelemetry integration;
-- Python/platform support and build backend;
-- public run/serve and CLI semantics;
-- official business capabilities and extensions;
-- release and public governance policy.
-
-## Current objective
-
-1. review ADR-005 and the detailed hardening contract;
-2. verify identifier trust boundaries and correlation rules;
-3. verify exception safety and stable code rules;
-4. verify configuration reload has no partial visibility;
-5. verify strict serialization and negotiation behavior;
-6. verify Runtime Record failure, disk, retention, and recovery semantics;
-7. verify telemetry redaction and cardinality rules;
-8. open a documentation-only Pull Request;
-9. keep P1 blocked.
+1. public `serve`/startup surface and ownership between Application, Server, and CLI;
+2. CLI command grammar and `module:app` discovery;
+3. production versus development execution and reload boundaries;
+4. Worker/process startup options and graceful signal behavior;
+5. minimum Python version and platform support matrix;
+6. build backend and authoritative version source;
+7. package metadata, wheel/sdist, console entry point, and CI compatibility matrix;
+8. configuration profiles and exit-code contract;
+9. implementation tests for startup, import, discovery, signal, packaging, and clean installation.
 
 ## Out of scope
 
 - creating production package files or directories;
-- implementing identifiers, configuration, serializers, records, or telemetry;
+- implementing any framework component;
 - adding runtime dependencies;
 - publishing packages;
 - starting P1.
 
-## Exit conditions for P0-D5
-
-1. ADR-005 and `HARDENING_FOUNDATIONS.md` are reviewed and merged;
-2. identifier, error, configuration, serialization, record, and telemetry contracts are explicit;
-3. Runtime Record reservation and disk-failure behavior are explicit;
-4. the old checklist no longer acts as a second architecture source;
-5. deferred choices remain unresolved;
-6. the project lead performs the final merge.
-
-P0 continues after P0-D5. P1 remains blocked.
+P1 remains blocked until all P0 exit conditions are satisfied and the project lead explicitly authorizes it.
