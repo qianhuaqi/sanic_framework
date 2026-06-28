@@ -2,13 +2,13 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Current phase: P0-D4 - Application Kernel, Request Pipeline, and Minimum Public API
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: none
-Active decision Issue: none
+Active decision branch: `human/dodo/phase-p0-d4-application-kernel`
+Active decision Issue: #40
 Parent architecture Issue: #25
-Status: P0-D3 accepted; awaiting next architecture decision
+Status: proposed architecture under project-lead review
 Next phase allowed: no
 
 ## Foundational fact
@@ -19,83 +19,96 @@ It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper
 
 ## Completed decisions
 
-### P0-D1: Single repository and development concurrency
+### P0-D1
 
-Accepted through ADR-001 and PR #32.
+Single repository and development concurrency are accepted through ADR-001 and PR #32.
 
-Confirmed:
+### P0-D2
 
-- one canonical repository;
-- isolated Issues, branches, worktrees, environments, and Pull Requests;
-- declared write scopes and dependency order;
-- parallel development with serial integration into `main`.
+Runtime concurrency is accepted through ADR-002 and PR #35.
 
-### P0-D2: Runtime concurrency
+### P0-D3
 
-Accepted through ADR-002 and PR #35.
+Package, source layout, and component boundaries are accepted through ADR-003 and PR #38.
 
-Confirmed:
+Confirmed package baseline:
 
-- standard-library `asyncio` semantics as the correctness baseline;
-- one event loop and Application Runtime per Worker;
-- structured task ownership;
-- bounded admission, queues, executors, telemetry, and records;
-- absolute monotonic Deadline and cancellation propagation;
-- event-loop isolation for blocking work;
-- bounded Worker restart and ordered graceful shutdown.
+```text
+Distribution:    lingshu
+Import package:  lingshu
+Production code: lingshu/
+src layout:      prohibited
+```
 
-### P0-D3: Package, source layout, and component boundaries
+## Active proposal: P0-D4
 
-Accepted through ADR-003 and PR #38 at merge commit `66c977f435c23fc9aaa35c4f085a7ca20a81879a`.
+The proposal defines:
 
-Confirmed:
+- public `LingShu` composition root and internal Application Kernel;
+- lifecycle `CREATED → CONFIGURING → FROZEN → STARTING → RUNNING → DRAINING → STOPPING → STOPPED`;
+- immutable Application Revision and compiled Application Plan;
+- route, middleware, extension, configuration, and exception registration only before freeze;
+- no partial plan publication after freeze failure;
+- asynchronous handler contract with explicit Request input;
+- deterministic application and route middleware onion ordering;
+- fixed request pipeline from protocol acceptance through Scope cleanup;
+- immutable Request metadata, request-scoped state, and bounded single-consumer body;
+- one-time handler return normalization;
+- Response states `NEW → PREPARED → COMMITTED → COMPLETED/ABORTED`;
+- no status/header mutation or second response after commit;
+- deterministic exception mapper resolution;
+- extension contribution at configuration/freeze time and immutable request-time participation;
+- minimum root exports: `LingShu`, `Request`, `Response`, and `HTTPException`.
 
-- one Python distribution: `lingshu`;
-- one import package: `lingshu`;
-- one root-level `pyproject.toml`;
-- no `src/` layout;
-- no initial `packages/` monorepo layout;
-- production source directly under root-level `lingshu/`;
-- internal components: `core`, `runtime`, `http`, `server`, `record`, `extensions`, `cli`, and `testing`;
-- one framework version and release cadence;
-- Runtime Record mechanisms included by default, with heavy exporters optional;
-- explicit acyclic dependency direction;
-- controlled root public facade;
-- mandatory wheel/sdist clean-install verification outside the checkout.
+Detailed proposal:
 
-## Still unresolved
+- `docs/decisions/ADR-004-application-kernel-request-pipeline-and-public-api.md`
+- `docs/architecture/APPLICATION_KERNEL_AND_REQUEST_PIPELINE.md`
 
-- Application Kernel state model and composition root;
-- request execution pipeline and exact stage ordering;
-- Request, Response, Router, Middleware, and exception contracts;
-- minimum public API and import surface;
-- identifiers, exceptions, configuration, serialization, and Runtime Record storage budgets;
-- built-in versus optional official capabilities;
-- Python and platform support range;
-- build backend and authoritative version-source mechanism;
-- listener distribution and HTTP/2/HTTP/3 semantics;
-- release, compatibility, license, contribution, and security policies.
+## Explicitly unresolved
 
-## Recommended next decision
+P0-D4 does not decide:
 
-P0-D4 should decide Application Kernel, request execution pipeline, and minimum public API:
+- full configuration hot reload and multi-Worker rollout;
+- complete exception taxonomy and error payload schema;
+- identifier formats;
+- JSON/form/multipart/upload APIs;
+- automatic `HEAD` and `OPTIONS`;
+- host routing, reverse routing, mounts, and sub-applications;
+- server `run`/`serve` and CLI details;
+- synchronous handler adaptation;
+- dependency injection;
+- OpenAPI and official extension implementations;
+- exact numeric limits, timeouts, and media-type defaults;
+- Python/platform support and build backend.
 
-1. Application creation and composition responsibilities;
-2. application lifecycle and immutable/frozen configuration boundary;
-3. route registration and compile/freeze boundary;
-4. exact request execution stage order;
-5. middleware scopes and ordering;
-6. Request/Response ownership and mutability rules;
-7. exception mapping and response commit semantics;
-8. minimal user-facing API and controlled root exports;
-9. framework/application boundary and extension participation.
+## Current objective
+
+1. review ADR-004 and the detailed pipeline contract;
+2. verify the state and freeze boundaries;
+3. verify Middleware and exception ordering;
+4. verify Request/Response ownership and commit semantics;
+5. verify the minimal public API remains small;
+6. open a documentation-only Pull Request;
+7. keep P1 blocked.
 
 ## Out of scope
 
-- creating the production `lingshu/` tree or `pyproject.toml`;
-- implementing Kernel, HTTP, Server, Router, Middleware, Record, CLI, or extensions;
-- runtime dependency introduction;
-- package publication;
+- creating production package files or directories;
+- implementing Kernel, Router, Middleware, Request, Response, Server, Record, CLI, or extensions;
+- adding runtime dependencies;
+- publishing packages;
 - starting P1.
 
-P1 remains blocked until all P0 exit conditions are satisfied and the project lead explicitly authorizes it.
+## Exit conditions for P0-D4
+
+1. ADR-004 and detailed request-pipeline documentation are reviewed and merged;
+2. Application states and freeze semantics are explicit;
+3. Route, Middleware, Handler, Request, Response, and Exception contracts are explicit;
+4. request stage ordering is deterministic and testable;
+5. commit and post-commit failure semantics are explicit;
+6. the minimum public facade is explicit;
+7. deferred decisions remain unresolved;
+8. the project lead performs the final merge.
+
+P0 continues after P0-D4. P1 remains blocked.

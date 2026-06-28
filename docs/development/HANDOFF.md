@@ -3,106 +3,124 @@
 Updated at: 2026-06-28
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Phase: P0-D4 - Application Kernel, Request Pipeline, and Minimum Public API
 Parent Issue: #25
-Active decision Issue: none
-Active decision branch: none
+Active decision Issue: #40
+Active decision branch: `human/dodo/phase-p0-d4-application-kernel`
 Baseline: latest accepted `main`
-Status: P0-D3 accepted; awaiting P0-D4
+Status: proposed architecture ready for review
 
 ## Accepted decisions
 
-### P0-D1
+- P0-D1: single repository and development concurrency through ADR-001 / PR #32.
+- P0-D2: runtime concurrency through ADR-002 / PR #35.
+- P0-D3: package and component layout through ADR-003 / PR #38.
 
-Single repository and development concurrency governance are accepted through ADR-001 and PR #32.
+## P0-D4 proposal completed on this branch
 
-### P0-D2
+- Added `ADR-004-application-kernel-request-pipeline-and-public-api.md`.
+- Added `APPLICATION_KERNEL_AND_REQUEST_PIPELINE.md`.
+- Defined public `LingShu` composition root and private low-level Application Kernel.
+- Defined Application states and legal mutation windows.
+- Defined immutable Application Revision and atomic freeze publication.
+- Defined route declaration, conflict validation, and immutable compiled Router.
+- Defined asynchronous handler contract with explicit Request input.
+- Defined deterministic application and route Middleware onion ordering.
+- Defined the exact twenty-stage request pipeline.
+- Defined immutable Request metadata, scoped state, and bounded single-consumer body.
+- Defined one-time handler return normalization and rejected tuple/None magic.
+- Defined Response state and commit semantics.
+- Defined exception mapper resolution before and after commit.
+- Defined extension contribution, startup, request-time, and reverse-shutdown boundaries.
+- Proposed minimum root exports: `LingShu`, `Request`, `Response`, `HTTPException`.
+- Defined state-machine, contract, leak, ordering, commit, and import-side-effect tests.
 
-Runtime concurrency is accepted through ADR-002 and PR #35.
-
-### P0-D3
-
-Package, source layout, and component boundaries are accepted through ADR-003 and PR #38.
-
-- Issue #37 completed.
-- Merge commit: `66c977f435c23fc9aaa35c4f085a7ca20a81879a`.
-- Detailed model: `docs/architecture/PACKAGE_AND_COMPONENT_LAYOUT.md`.
-
-Confirmed layout:
-
-```text
-Repository:      qianhuaqi/lingshu
-Distribution:    lingshu
-Import package:  lingshu
-Packaging file:  pyproject.toml
-Production code: lingshu/
-src layout:      prohibited
-```
-
-Confirmed target components:
+## Proposed application lifecycle
 
 ```text
-lingshu.core
-lingshu.runtime
-lingshu.http
-lingshu.server
-lingshu.record
-lingshu.extensions
-lingshu.cli
-lingshu.testing
+CREATED
+→ CONFIGURING
+→ FROZEN
+→ STARTING
+→ RUNNING
+→ DRAINING
+→ STOPPING
+→ STOPPED
 ```
 
-Confirmed dependency direction:
+No route, Middleware, Extension, exception mapper, or configuration registry mutation is allowed after freeze.
+
+## Proposed request path
 
 ```text
-runtime     → core
-http        → runtime + core
-server      → http + runtime + core
-record      → core + stable runtime contracts
-extensions  → core + runtime (+ documented HTTP contracts when required)
-cli         → public composition surface
-testing     → public/test-support surfaces
+protocol acceptance
+→ Request Scope / Deadline
+→ identities / Runtime Record
+→ Request construction
+→ application admission
+→ application Middleware
+→ route match
+→ route admission
+→ route Middleware
+→ async Handler
+→ Response normalization
+→ Middleware unwind
+→ exception fallback
+→ Response prepare
+→ commit
+→ body write/stream
+→ record finalization
+→ Scope cleanup
 ```
 
-Additional confirmed rules:
+## Proposed public facade
 
-- one framework version and release cadence;
-- no initial multiple distributions or component-level `pyproject.toml` files;
-- no dependency cycles;
-- production components do not import `testing`;
-- `lingshu/__init__.py` is the controlled public facade;
-- deep imports are private unless explicitly documented;
-- optional integrations load lazily and remain non-mandatory;
-- Runtime Record mechanisms ship by default while heavy exporters remain optional;
-- package validation builds wheel and sdist, installs into a clean environment, and tests from outside the checkout without repository `PYTHONPATH` injection.
+```python
+from lingshu import LingShu, Request, Response, HTTPException
+```
+
+Example shape:
+
+```python
+app = LingShu()
+
+@app.get("/")
+async def index(request: Request) -> Response:
+    return Response.text("hello")
+```
 
 ## Intentionally deferred
 
-- minimum Python version and platform matrix;
-- build backend;
-- exact public application/request/response and runtime API names;
-- API manifest mechanism;
-- authoritative version-source mechanism;
-- optional extras and official integrations;
-- first PyPI release timing;
-- post-v1.0 compatibility policy.
-
-## Next decision
-
-P0-D4 should define:
-
-- Application Kernel and composition responsibilities;
-- application lifecycle and freeze boundaries;
-- route registration and compilation;
-- request execution pipeline and stage order;
-- middleware scopes and ordering;
-- Request and Response ownership/mutability;
-- exception mapping and response commit semantics;
-- minimal public API and root exports;
-- extension participation in application startup and request handling.
+- configuration hot reload and multi-Worker rollout;
+- full exception taxonomy and error body schema;
+- identifier formats;
+- JSON/form/multipart/upload APIs;
+- automatic `HEAD` and `OPTIONS`;
+- host routing, reverse routing, mounts, and sub-applications;
+- server `run`/`serve` and CLI semantics;
+- sync handler adaptation;
+- dependency injection;
+- OpenAPI and official integrations;
+- exact numeric defaults;
+- Python/platform support and build backend.
 
 ## Verification
 
-P0-D3 added architecture and governance documentation only. No production source directory, `pyproject.toml`, runtime dependency, framework implementation, or publishing configuration was created.
+This branch contains architecture and governance documentation only. It adds no production source, package skeleton, dependency, or publishing configuration.
 
-P1 remains blocked.
+Review must verify:
+
+- lower Core does not depend on Server through the public facade;
+- failed freeze cannot publish a partial plan;
+- running plan mutation is impossible;
+- Middleware order is deterministic;
+- Request body and state remain Scope-owned;
+- Response cannot be replaced after commit;
+- cancellation is not converted into an ordinary error response;
+- extensions cannot mutate registries during request handling;
+- the public root export surface remains minimal;
+- P1 remains blocked.
+
+## Next action
+
+Review and merge the P0-D4 decision Pull Request only if the Kernel and request-pipeline contract is accepted. Do not start production implementation.
