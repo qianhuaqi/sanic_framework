@@ -21,13 +21,13 @@ jobs:
     name: Temporary Ruff diagnostic
     runs-on: ubuntu-latest
     steps:
-      - name: Clone and run Ruff
+      - name: Clone and show Ruff fix diff
         shell: bash
         run: |
           git clone -q --depth=1 --branch "$GITHUB_HEAD_REF" "https://github.com/$GITHUB_REPOSITORY.git" source
           cd source
           python -m pip install -q "ruff>=0.8,<1"
-          ruff check . --output-format=concise
+          ruff check . --select I,RUF022,E501 --fix --diff
 
   quality:
     name: Quality and governance
