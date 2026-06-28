@@ -2,20 +2,16 @@
 
 Project: LingShu Framework
 Canonical repository: `qianhuaqi/lingshu`
-Current phase: P0 - Architecture Decision Review and Blueprint Consolidation
+Current phase: P0-D7 - Public Governance, Release Policy, and Final Freeze Candidate
 Phase type: non-implementation architecture and governance
 Accepted baseline: latest accepted `main`
-Active decision branch: none
-Active decision Issue: none
+Active decision branch: `human/dodo/phase-p0-d7-governance-freeze`
+Active decision Issue: #49
 Parent architecture Issue: #25
-Status: P0-D6 accepted; awaiting final governance and freeze decision
+Status: proposed final P0 decision under project-lead review
 Next phase allowed: no
 
-## Foundational fact
-
-LingShu is a new, independently implemented Python Web/API framework. It does not depend on Sanic, FastAPI, Flask, Django, Starlette, or another upper-level Web framework.
-
-## Completed decisions
+## Completed technical decisions
 
 - P0-D1: repository and concurrent-development governance — ADR-001 / PR #32.
 - P0-D2: runtime concurrency — ADR-002 / PR #35.
@@ -24,89 +20,95 @@ LingShu is a new, independently implemented Python Web/API framework. It does no
 - P0-D5: Hardening Foundations — ADR-005 / PR #44.
 - P0-D6: executable, CLI, support matrix, and build baseline — ADR-006 / PR #47.
 
-P0-D6 effective merge commit:
+## Active proposal: P0-D7
+
+P0-D7 proposes:
 
 ```text
-5f89572398cee509b9571ee1fe8c20bd2f71dfeb
+License:           Apache-2.0
+Contribution:      DCO 1.1, Signed-off-by, no initial CLA
+Conduct:           Contributor Covenant 2.1 adaptation
+Security:          private vulnerability reporting and supported-version rules
+Versioning:        SemVer 2.0.0 with stricter 0.x compatibility
+First P1 version:  0.1.0.dev0
+Branch model:      main only as long-lived branch
+Release:           tag-driven CI artifacts, immutable releases, trusted publication
+P1:                single-Worker minimum vertical slice
 ```
 
-## Confirmed P0-D6 baseline
+Files added by the proposal:
 
-### Public execution
+- `LICENSE`;
+- `NOTICE`;
+- `DCO`;
+- `CONTRIBUTING.md`;
+- `SECURITY.md`;
+- `CODE_OF_CONDUCT.md`;
+- `CHANGELOG.md`;
+- `docs/governance/RELEASE_AND_COMPATIBILITY_POLICY.md`;
+- `docs/development/P1_IMPLEMENTATION_PLAN.md`;
+- `docs/decisions/ADR-007-public-governance-release-and-p0-freeze.md`.
 
-```python
-from lingshu.server import Server, ServerConfig, serve
-```
+## Proposed compatibility rules
 
-`Server` and `serve` are single-Worker. Multi-Worker Supervisor remains CLI/internal initially. Application does not supervise processes and Kernel does not import Server.
+Before 1.0:
 
-### CLI
+- patch releases remain compatible inside one minor line;
+- breaking public changes require a new minor release;
+- breaking changes require changelog and migration guidance;
+- removal should normally follow at least one released minor of deprecation.
+
+After 1.0:
+
+- breaking changes require a major release;
+- normal removal requires two minor releases and 180 days of deprecation;
+- security/data-corruption/protocol emergencies may use a documented narrow exception.
+
+## Proposed P1 scope
+
+P1 is limited to an installable single-Worker vertical slice:
 
 ```text
-lingshu run module:app
-lingshu run module:create_app --factory
-lingshu check module:app
-lingshu version
-python -m lingshu ...
+package/CI foundation
+→ core identifiers/time/errors/config
+→ runtime Scope/Deadline/cancellation/admission
+→ HTTP Request/Response/body
+→ Router/Middleware
+→ Application Kernel/freeze
+→ minimum Runtime Record
+→ native single-Worker HTTP/1.1 Server
+→ CLI version/check/run --workers 1
+→ clean wheel/sdist verification
 ```
 
-Discovery accepts strict `module:attribute` only. No expressions, file paths, calls, implicit scanning, or dotted attribute traversal.
+Multi-Worker Supervisor, reload, advanced streaming/body formats, official extensions, and public package-index release remain outside P1.
 
-### Processes and shutdown
+## Freeze gate
 
-- multi-Worker semantics use cross-platform `spawn`;
-- each Worker independently imports/freezes its Application and reports RevisionId;
-- Supervisor binds listeners once and explicitly transfers them;
-- readiness requires identical RevisionId and all required resources/record policy;
-- first termination drains, second or timeout hard-stops;
-- stable exit codes 0, 1, 2, 3, 4, 5, 6, 7, 8, and 70.
+Merging the P0-D7 decision PR will create a P0 Freeze Candidate only.
 
-### Support and build
+P1 remains blocked until a separate Final Freeze PR:
 
-```text
-CPython minimum: 3.12
-Required:        3.12, 3.13, 3.14
-Preview:         3.15 prerelease
-Platforms:       Tier 1 64-bit Linux, Windows, macOS
-Build backend:   Hatchling
-Version source:  [project].version
-Console script:  lingshu = "lingshu.cli:main"
-Artifacts:       py3-none-any wheel + sdist
-```
+1. marks ADR-007 Accepted;
+2. marks the Blueprint Frozen;
+3. closes parent Issue #25;
+4. records the final P0 commit;
+5. changes the phase to P1 authorized;
+6. explicitly authorizes creation of production package files and P1 Issues.
 
-Packaging acceptance requires isolated build, inventory inspection, non-editable clean install outside checkout, sdist rebuild, separate editable testing, and uninstall verification.
+## Current objective
 
-## Still unresolved
+- review License, DCO, conduct, and security policies;
+- review 0.x/1.x compatibility and release rules;
+- review P1 scope, dependency graph, write scopes, and acceptance matrix;
+- verify governance files do not conflict;
+- open a documentation/governance Pull Request;
+- keep production implementation blocked.
 
-- License selection and metadata;
-- contribution, code-of-conduct, and contributor-certificate/DCO policy;
-- security disclosure, supported security versions, and vulnerability handling;
-- changelog and release-note policy;
-- SemVer/pre-1.0 compatibility and deprecation policy;
-- release branches/tags, first development version, PyPI timing, signing, and attestations;
-- exact numeric defaults and health endpoint paths;
-- P1 implementation scope, dependency ordering, Issue breakdown, and acceptance matrix;
-- final P0 Blueprint freeze and explicit P1 authorization.
+## Prohibited until Final Freeze
 
-## Recommended next decision
-
-P0-D7 should be the final P0 governance and freeze decision:
-
-1. choose License and required repository governance files;
-2. define contribution and code-of-conduct rules;
-3. define security reporting and supported-version policy;
-4. define changelog, release notes, SemVer/pre-1.0 compatibility, deprecation, and removal rules;
-5. define tags, branches, version bump, artifact publication, signing/attestation, and rollback policy;
-6. define the first development version and P1 milestone mapping;
-7. create an executable P1 Issue graph and acceptance matrix;
-8. perform the final Blueprint consistency audit;
-9. explicitly freeze P0 and authorize or withhold P1.
-
-## Out of scope
-
-- creating production package files, code, tests, or workflows;
-- adding dependencies;
-- publishing artifacts;
-- beginning P1 before explicit authorization.
-
-P1 remains blocked.
+- creating `pyproject.toml`, `lingshu/`, `tests/`, examples, or CI workflows;
+- adding runtime/build dependencies to the actual project;
+- implementing framework code;
+- opening executable P1 implementation Issues;
+- publishing artifacts.
