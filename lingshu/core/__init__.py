@@ -47,6 +47,7 @@ from lingshu.core.time import (
 )
 
 __all__ = (
+    "PROBLEM_MEDIA_TYPE",
     "AdmissionError",
     "ConfigurationError",
     "ConnectionId",
@@ -60,7 +61,6 @@ __all__ = (
     "LingShuError",
     "MonotonicClock",
     "OperationId",
-    "PROBLEM_MEDIA_TYPE",
     "ProblemDetails",
     "ProtocolError",
     "RecordError",

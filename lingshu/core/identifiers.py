@@ -100,7 +100,8 @@ class RevisionId:
 
     def __post_init__(self) -> None:
         if _LOWER_HEX_256.fullmatch(self.value) is None:
-            raise ValueError("RevisionId must be a 64-character lowercase SHA-256 hexadecimal value")
+            message = "RevisionId must be a 64-character lowercase SHA-256 hexadecimal value"
+            raise ValueError(message)
 
     @classmethod
     def parse(cls, value: str) -> Self:
