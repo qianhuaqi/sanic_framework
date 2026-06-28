@@ -1,9 +1,10 @@
 # LingShu Release and Compatibility Policy
 
-- Status: Proposed for P0-D7
-- Parent architecture Issue: #25
-- Decision Issue: #49
+- Status: Accepted when PR #51 is merged
+- Parent architecture Issue: #25 (closed by PR #51)
+- Decision Issue: #49 (closed by PR #51)
 - Related ADR: `docs/decisions/ADR-007-public-governance-release-and-p0-freeze.md`
+- Final Freeze: PR #51
 
 ## 1. Version model
 
@@ -13,16 +14,14 @@ LingShu follows Semantic Versioning 2.0.0:
 MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
 ```
 
-Git tags use:
+Tags use:
 
 ```text
 vMAJOR.MINOR.PATCH
 vMAJOR.MINOR.PATCH-prerelease
 ```
 
-The version stored in package metadata does not include the `v` prefix.
-
-A released version and its artifacts are immutable. Any correction requires a new version.
+Package metadata omits the `v` prefix. A published version and its artifacts are immutable; corrections require a new version.
 
 ## 2. First development version
 
@@ -32,7 +31,7 @@ The first P1 package skeleton uses:
 0.1.0.dev0
 ```
 
-This is a development version, not a public stable release. Public release candidates may use:
+This is a development version, not a public stable release. Future prereleases may use:
 
 ```text
 0.1.0a1
@@ -40,7 +39,7 @@ This is a development version, not a public stable release. Public release candi
 0.1.0rc1
 ```
 
-The first normal public release is expected to be `0.1.0` only after its declared acceptance gate passes.
+The first normal public release is `0.1.0` only after its acceptance gate passes and the project lead separately authorizes publication.
 
 ## 3. Public API definition
 
@@ -48,43 +47,42 @@ Public API consists only of:
 
 - names explicitly exported by documented public modules;
 - behavior explicitly promised in user documentation;
-- CLI commands/options documented as public;
-- stable error codes and wire formats documented as public;
-- package metadata and configuration keys documented as public.
+- documented CLI commands and options;
+- documented configuration and wire contracts;
+- documented stable error codes;
+- documented package metadata and configuration keys.
 
-Importable implementation details are not automatically public.
-
-The root public facade is controlled through explicit export manifests. Deep modules are private unless documentation promotes them.
+Importable implementation details are not automatically public. The root facade is controlled through explicit export manifests; deep modules remain private unless documentation promotes them.
 
 ## 4. Pre-1.0 compatibility
 
-Major version zero permits rapid development, but LingShu applies stricter project rules:
-
 ### Patch releases: `0.Y.Z`
 
-Patch releases must be backward compatible within the same minor line except for a narrowly scoped security or correctness emergency.
+Patch releases remain backward compatible inside the same minor line except for a narrowly approved security or severe correctness emergency.
 
 Allowed patch changes include:
 
 - bug fixes;
-- performance improvements that preserve observable contracts;
+- compatible performance improvements;
 - documentation and diagnostics corrections;
-- new private implementation;
-- security fixes that do not require public breakage.
+- private implementation changes;
+- non-breaking security fixes.
 
-A patch release must not silently remove or change a documented public API.
+A patch release must not silently remove or alter a documented public API.
 
 ### Minor releases: `0.Y.0`
 
-A pre-1.0 minor release may contain breaking public changes, but every breaking change must:
+A pre-1.0 minor release may contain breaking public changes, but each breaking change must:
 
-- be called out in the changelog and release notes;
+- appear in changelog and release notes;
 - include migration guidance;
 - explain why compatibility could not be preserved;
-- update contract tests and public export manifests;
+- update public export manifests and contract tests;
 - avoid unrelated breakage.
 
 Where practical, removal is preceded by at least one released minor that marks the API deprecated.
+
+Major version zero does not permit undocumented arbitrary breakage.
 
 ## 5. Version 1.0 and later
 
@@ -94,7 +92,7 @@ After `1.0.0`:
 - MINOR contains backward-compatible features and deprecations;
 - MAJOR contains incompatible public changes.
 
-A public API normally remains deprecated for at least:
+Normal public API removal requires at least:
 
 ```text
 two released minor versions
@@ -102,21 +100,21 @@ AND
 180 days
 ```
 
-Removal occurs in a new major version unless a security/correctness exception applies.
+Removal occurs in a new major version unless an approved security/correctness exception applies.
 
 ## 6. Deprecation contract
 
-A deprecation must provide:
+A deprecation provides:
 
-- the deprecated symbol/behavior;
-- the replacement or migration path;
-- the release where deprecation begins;
-- the earliest eligible removal release/time;
-- a user-visible warning when runtime warning is appropriate;
+- deprecated symbol or behavior;
+- replacement or migration path;
+- release where deprecation begins;
+- earliest eligible removal release and time;
+- user-visible warning where appropriate;
 - documentation and changelog entries;
-- tests that preserve the deprecated behavior during the window.
+- tests preserving deprecated behavior during the window.
 
-Warnings must be actionable, bounded, and not emit secrets or high-cardinality data.
+Warnings must be actionable, bounded, and free of secrets or high-cardinality data.
 
 ## 7. Emergency compatibility exceptions
 
@@ -126,14 +124,14 @@ An emergency exception must:
 
 - be the narrowest safe change;
 - be approved by the project lead;
-- include a security advisory or incident explanation when disclosure permits;
+- include an advisory or incident explanation when disclosure permits;
 - document affected versions and migration/mitigation;
 - use an appropriate version bump;
 - never rewrite existing artifacts.
 
 ## 8. Branch model
 
-Long-lived branches:
+Long-lived branch:
 
 ```text
 main
@@ -142,68 +140,71 @@ main
 Rules:
 
 - `main` is the only long-lived development/integration branch;
-- no long-lived `develop` branch;
+- no long-lived `develop`;
 - normal work uses short-lived Issue branches;
 - release stabilization may use short-lived `release/X.Y` only when necessary;
 - security/hotfix branches are short-lived and merge back to `main`;
 - final merge authority belongs to the project lead;
-- no automatic merge.
+- automatic merge is prohibited.
 
 ## 9. Release preparation
 
-A release Pull Request must:
+A release PR must:
 
-1. select the version from the accepted change set;
-2. update `[project].version` as the single version source;
+1. select a version from the accepted change set;
+2. update static `[project].version` as the single version source;
 3. move relevant `Unreleased` entries into a dated release section;
 4. update support/security tables when required;
 5. include migration notes for incompatible changes;
 6. pass the full release matrix;
 7. build wheel and sdist from a clean checkout;
-8. inspect metadata, license, NOTICE, and artifact inventory;
+8. inspect metadata, LICENSE, NOTICE, and artifact inventory;
 9. install and test artifacts outside the checkout;
-10. verify the tag/version/changelog relationship.
+10. verify tag/version/changelog consistency.
 
 The release PR does not publish artifacts before merge.
 
 ## 10. Tagging and artifact construction
 
-After the release PR merges:
+After a release PR merges:
 
 ```text
 main release commit
 → annotated tag vX.Y.Z
 → protected CI build from tag
-→ test/inspect artifacts
-→ provenance/attestation
+→ test and inspect artifacts
+→ produce provenance/attestation
 → publish release notes and artifacts
-→ publish to package index when authorized
+→ publish to package index when separately authorized
 ```
 
-Artifacts must be produced by CI from the tag, not uploaded from a developer workstation as the authoritative release.
+Authoritative artifacts come from CI from the tag, not from a developer workstation.
 
-The tag, project version, wheel metadata, sdist metadata, GitHub release, and changelog section must agree.
+Tag, project version, wheel metadata, sdist metadata, GitHub release, and changelog must agree.
 
 ## 11. Package-index publication
 
-Before the first public package-index release, the project must configure short-lived identity-based trusted publishing and verifiable build provenance/attestation.
+Before the first public package-index release:
 
-CI must not store a long-lived package-index password or API token when trusted short-lived credentials are available.
+- configure short-lived identity-based trusted publishing where supported;
+- do not store a long-lived production package-index password or API token in CI;
+- separate test/staging publication from production publication;
+- require explicit project-lead authorization.
 
-Test/staging publication must be separated from production publication.
+Final Freeze authorizes P1 implementation, not public package publication.
 
 ## 12. Signing and provenance
 
-The release pipeline must preserve:
+The release pipeline preserves:
 
 - source commit and tag identity;
 - workflow identity;
 - artifact hashes;
-- build environment/tool versions;
+- build environment and tool versions;
 - test results;
-- provenance or attestation supported by the chosen release platform.
+- platform-supported provenance or attestation.
 
-Manual signing requirements may be added later, but absence of a manual signature must not be confused with absence of provenance.
+Manual signing may be added later. Absence of manual signature must not be confused with absence of provenance.
 
 ## 13. Failed release and rollback
 
@@ -214,18 +215,16 @@ When a release is defective:
 - stop promotion/deployment where possible;
 - publish a new corrected version;
 - yank the defective package-index release when appropriate without deleting history;
-- mark the affected release in release notes/security advisory;
+- identify the affected release in release notes or an advisory;
 - provide mitigation and upgrade guidance;
 - preserve evidence and artifact hashes;
-- merge all fixes back to `main`.
+- merge fixes back to `main`.
 
-Git tag deletion or retargeting after public publication is prohibited except for an unreleased private mistake approved by the project lead and fully documented.
+Deleting or retargeting a publicly released tag is prohibited. An unpublished private mistake may be corrected only with project-lead approval and explicit documentation.
 
 ## 14. Changelog policy
 
-`CHANGELOG.md` records notable user-visible changes.
-
-Required categories:
+`CHANGELOG.md` records notable user-visible changes under:
 
 ```text
 Added
@@ -238,46 +237,46 @@ Security
 
 Rules:
 
-- every user-visible PR updates `Unreleased` unless explicitly exempted;
+- user-visible PRs update `Unreleased` unless explicitly exempted;
 - internal refactors without observable effect may omit entries;
 - security entries may remain embargoed until coordinated disclosure;
 - breaking changes include migration guidance;
 - released sections are dated;
-- release notes may be richer but must not contradict the changelog.
+- release notes may add detail but cannot contradict the changelog.
 
 ## 15. Security support policy
 
 Before 1.0, only the latest `0.y` minor line is supported unless otherwise announced.
 
-After 1.0, the latest minor of the current major is supported. After a new major release, the previous major normally receives critical/high-severity fixes for 180 days.
+After 1.0, the latest minor of the current major is supported. After a new major, the previous major normally receives critical/high-severity fixes for 180 days.
 
 Exact supported versions are maintained in `SECURITY.md` and release notes.
 
 ## 16. Dependency and platform changes
 
-A new mandatory runtime dependency requires a dedicated dependency review/ADR.
+A new mandatory runtime dependency requires a dedicated dependency review or ADR.
 
-Dropping a required Python version, implementation, operating system tier, or architecture requires:
+Dropping a required Python version, implementation, operating-system tier, or architecture requires:
 
 - a dedicated Issue;
 - documented rationale and impact;
 - migration notice;
 - changelog entry;
 - release-policy review;
-- a version bump appropriate to the compatibility impact.
+- an appropriate version bump.
 
 ## 17. Release authorization
 
 Only the project lead may authorize:
 
 - a normal public release;
-- a package-index production publication;
-- retagging an unpublished private mistake;
+- a production package-index publication;
+- correction of an unpublished private tag mistake;
 - an emergency compatibility exception;
-- changing the License, DCO/CLA model, build backend, or version source.
+- changes to License, DCO/CLA model, build backend, or version source.
 
-## 18. P0 freeze relationship
+## 18. P0/P1 relationship
 
-This policy becomes implementation authority only after ADR-007 is accepted and the dedicated Final Freeze PR is merged.
+The project lead's merge of PR #51 accepts this policy, freezes P0, and authorizes the P1 implementation scope.
 
-The P0-D7 decision PR itself creates a Freeze Candidate. It does not authorize production code.
+It does not authorize public package publication, production-readiness claims, or implementation outside `P1_IMPLEMENTATION_PLAN.md`.
