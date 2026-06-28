@@ -1,27 +1,52 @@
 # Development Handoff
 
 Updated at: 2026-06-28
-Branch: human/dodo/phase-p0-greenfield-reset
+Phase: P0-G1 - Governance and Architecture Fact-Source Consolidation
+Branch: `human/dodo/phase-p0-g1-governance-hardening`
 Issue: #25
-Status: repository reset prepared
+Baseline: `main` after PR #28
+Status: governance hardening in progress
 
-## Completed
+## Confirmed repository state
 
-- Archived legacy main at `archive/legacy-sanic-20260628`.
-- Created a clean greenfield branch with architecture and governance files only.
-- Removed legacy source, tests, scaffolds, dependency configuration, and Sanic documentation from the active branch tree.
-- Restored the complete P0 Blueprint candidate.
-- Preserved v0.7 hardening topics as a non-authoritative consolidation checklist.
-- Established explicit greenfield and no-compatibility rules.
+- PR #28 is merged.
+- The active `main` tree is the greenfield P0 baseline.
+- The previous Sanic-based repository is archived at `archive/legacy-sanic-20260628`.
+- Archive commit: `b869270e0ec7cbc324d17ef246e39d0873aab14f`.
+- Production source, legacy tests, old scaffolds, and old dependency configuration are absent from the active tree.
+- P0 remains unaccepted and P1 remains blocked.
 
-## Remaining
+## Completed on this branch
 
-- Review and merge the greenfield reset PR.
-- Integrate accepted hardening items into the single authoritative Blueprint.
-- Confirm package and directory decisions with the project lead.
-- Close or classify remaining legacy Issues.
-- Create P1 only after P0 acceptance.
+- Expanded `DEVELOPMENT_CONSTITUTION.md` into an executable governance contract.
+- Synchronized `CURRENT_PHASE.md` with the post-PR #28 state.
+- Marked ADR-000 as accepted and recorded the effective merge.
+- Updated `AGENTS.md` with reading order, conflict handling, P0 gates, dependency rules, security rules, and archive restrictions.
+- Expanded README with the actual repository status and contributor entrypoints.
+- Added `P0_DECISION_STATUS.md` to separate confirmed, rejected, and candidate architecture decisions.
+- Explicitly marked package, multi-distribution, `src/`, directory, extension, and release layouts as non-executable candidates.
+
+## Remaining on this branch
+
+- Add a visible candidate-status warning to the Blueprint itself or otherwise ensure the status register is referenced from its header.
+- Review the full Blueprint for statements that incorrectly present unresolved choices as frozen.
+- Integrate accepted hardening requirements into the single Blueprint before P0 acceptance.
+- Close or mark Issue #12 historical.
+- Verify all governance documents are internally consistent.
+- Open a Pull Request and record review evidence.
+
+## Known repository history noise
+
+During the preceding audit, three temporary files were accidentally committed directly to `main` and immediately removed. No temporary file remains in the tree. The six corrective/no-op commits remain visible because shared history was not rewritten.
+
+Affected commit sequence:
+
+- `eb12c697` / `5c7e5f54`;
+- `4c88089a` / `5550e75f`;
+- `333b90b2` / `788e3bf2`.
+
+No production or governance content changed as a result.
 
 ## Next action
 
-Review the greenfield reset diff and confirm that no legacy implementation file remains in the active branch.
+Complete the Blueprint warning and consistency review, close the remaining legacy Issue, compare the branch with `main`, and create the P0-G1 Pull Request.
