@@ -1,5 +1,11 @@
 """Stable Core provider contracts for LingShu."""
 
+from lingshu.core.application import (
+    Application,
+    ApplicationState,
+    LifecycleHook,
+    LingShu,
+)
 from lingshu.core.config import (
     ConfigField,
     ConfigSchema,
@@ -59,6 +65,18 @@ from lingshu.core.identifiers import (
     WorkerId,
     validate_external_request_id,
 )
+from lingshu.core.plan import (
+    ApplicationPlan,
+    ApplicationRevision,
+    AsyncExceptionMapper,
+    ExceptionMapper,
+    ExceptionMapperRegistration,
+    ExtensionContribution,
+    ExtensionLifecyclePlan,
+    LifecycleHookRegistration,
+    MapperScope,
+    SyncExceptionMapper,
+)
 from lingshu.core.problem import (
     PROBLEM_MEDIA_TYPE,
     ProblemDetails,
@@ -76,6 +94,11 @@ from lingshu.core.time import (
 __all__ = (
     "PROBLEM_MEDIA_TYPE",
     "AdmissionError",
+    "Application",
+    "ApplicationPlan",
+    "ApplicationRevision",
+    "ApplicationState",
+    "AsyncExceptionMapper",
     "ConfigField",
     "ConfigSchema",
     "ConfigSnapshot",
@@ -86,12 +109,20 @@ __all__ = (
     "ConnectionId",
     "DeadlineError",
     "EntropySource",
+    "ExceptionMapper",
+    "ExceptionMapperRegistration",
+    "ExtensionContribution",
     "ExtensionError",
+    "ExtensionLifecyclePlan",
     "FatalScope",
     "HandlerContractError",
     "InternalError",
     "LifecycleError",
+    "LifecycleHook",
+    "LifecycleHookRegistration",
+    "LingShu",
     "LingShuError",
+    "MapperScope",
     "MonotonicClock",
     "OperationId",
     "ProblemDetails",
@@ -115,6 +146,7 @@ __all__ = (
     "Severity",
     "SourceManifestEntry",
     "StorageError",
+    "SyncExceptionMapper",
     "SystemMonotonicClock",
     "SystemWallClock",
     "TraceId",
