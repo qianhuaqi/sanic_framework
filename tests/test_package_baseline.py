@@ -45,7 +45,16 @@ def test_project_metadata_matches_frozen_baseline() -> None:
 
 
 def test_root_facade_publishes_minimum_public_api() -> None:
-    assert lingshu.__all__ == ()
+    assert lingshu.__all__ == (
+        "HTTPException",
+        "LingShu",
+        "Request",
+        "Response",
+    )
+    assert hasattr(lingshu, "LingShu")
+    assert hasattr(lingshu, "Request")
+    assert hasattr(lingshu, "Response")
+    assert hasattr(lingshu, "HTTPException")
 
 
 def test_component_boundaries_are_importable() -> None:
