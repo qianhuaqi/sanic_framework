@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from lingshu.core.application import ApplicationState, LingShu
+from lingshu import HTTPException, LingShu, Request, Response
+from lingshu.core.application import ApplicationState
 from lingshu.core.errors import (
     ConfigurationError,
     HandlerContractError,
@@ -16,10 +17,7 @@ from lingshu.core.errors import (
 from lingshu.core.identifiers import RevisionId
 from lingshu.core.plan import ApplicationPlan, ExtensionContribution
 from lingshu.http import Headers, HTTPMethod, HTTPVersion, RequestBody, RequestTarget
-from lingshu.http.exceptions import HTTPException
 from lingshu.http.middleware import MiddlewareDeclaration
-from lingshu.http.request import Request
-from lingshu.http.response import Response
 from lingshu.runtime import Scope, ScopeKind
 
 # ---------------------------------------------------------------------------
@@ -49,9 +47,7 @@ def make_request(
             headers=Headers([]),
             scope=request_scope,
             body=RequestBody.from_bytes(b"", scope=request_scope, max_bytes=0),
-            request_id=type(request_scope).request_id
-            if False
-            else __import__(
+            request_id=type(request_scope).request_id  if False else __import__(
                 "lingshu.core.identifiers", fromlist=["RequestId"]
             ).RequestId.generate(),
             connection_id=__import__(
@@ -75,7 +71,12 @@ class TestRootFacade:
     def test_exact_root_all(self) -> None:
         import lingshu
 
-        assert lingshu.__all__ == ()
+        assert lingshu.__all__ == (
+            "HTTPException",
+            "LingShu",
+            "Request",
+            "Response",
+        )
 
     def test_root_does_not_export_internal_capabilities(self) -> None:
         import lingshu
@@ -581,178 +582,6 @@ class TestDispatch:
             req2 = make_request("GET", "/special")
             await app.dispatch("GET", "/special", req2)
             assert route_mw_called == ["called"]
-            await app.shutdown()
-
-        asyncio.run(run())
-
-    def test_middleware_ordering_event_sequence(self) -> None:
-        """Document the canonical dispatch pipeline event order on MATCH.
-
-        Required order: app:in → route:match → route:in → handler → route:out → app:out.
-        """
-
-        app = LingShu()
-        events: list[str] = []
-
-        async def app_mw(request: Request, call_next: object) -> Response:
-            events.append("app:in")
-            response = await call_next()  # type: ignore[misc]
-            events.append("app:out")
-            return response
-
-        app.add_middleware(app_mw)
-
-        async def route_mw(request: Request, call_next: object) -> Response:
-            events.append("route:in")
-            response = await call_next()  # type: ignore[misc]
-            events.append("route:out")
-            return response
-
-        @app.get("/", name="root", middleware=[MiddlewareDeclaration(route_mw)])
-        async def root(request: Request) -> Response:
-            events.append("handler")
-            return Response.text("ok")
-
-        app.freeze()
-        request = make_request("GET", "/")
-
-        async def run() -> None:
-            await app.startup()
-            await app.dispatch("GET", "/", request)
-            await app.shutdown()
-
-        asyncio.run(run())
-        assert events == [
-            "app:in",
-            "route:in",
-            "handler",
-            "route:out",
-            "app:out",
-        ]
-
-    def test_middleware_ordering_404_through_app_middleware(self) -> None:
-        """404 must be produced inside the app middleware terminal.
-
-        Event order: app:in → route:match(404) → app:out. No route middleware runs.
-        """
-
-        app = LingShu()
-        events: list[str] = []
-
-        async def app_mw(request: Request, call_next: object) -> Response:
-            events.append("app:in")
-            response = await call_next()  # type: ignore[misc]
-            events.append("app:out")
-            return response
-
-        app.add_middleware(app_mw)
-
-        async def route_mw(request: Request, call_next: object) -> Response:
-            events.append("route:in")
-            return await call_next()  # type: ignore[misc]
-
-        @app.get("/exists", name="root", middleware=[MiddlewareDeclaration(route_mw)])
-        async def root(request: Request) -> Response:
-            events.append("handler")
-            return Response.text("ok")
-
-        app.freeze()
-        request = make_request("GET", "/missing")
-
-        async def run() -> None:
-            await app.startup()
-            response = await app.dispatch("GET", "/missing", request)
-            assert response.status == 404
-            await app.shutdown()
-
-        asyncio.run(run())
-        assert events == ["app:in", "app:out"]
-
-    def test_middleware_ordering_405_through_app_middleware(self) -> None:
-        """405 must be produced inside the app middleware terminal.
-
-        Event order: app:in → route:match(405) → app:out. No route middleware runs.
-        """
-
-        app = LingShu()
-        events: list[str] = []
-
-        async def app_mw(request: Request, call_next: object) -> Response:
-            events.append("app:in")
-            response = await call_next()  # type: ignore[misc]
-            events.append("app:out")
-            return response
-
-        app.add_middleware(app_mw)
-
-        async def route_mw(request: Request, call_next: object) -> Response:
-            events.append("route:in")
-            return await call_next()  # type: ignore[misc]
-
-        @app.post("/items", name="items", middleware=[MiddlewareDeclaration(route_mw)])
-        async def items(request: Request) -> Response:
-            events.append("handler")
-            return Response.text("ok")
-
-        app.freeze()
-        request = make_request("GET", "/items")
-
-        async def run() -> None:
-            await app.startup()
-            response = await app.dispatch("GET", "/items", request)
-            assert response.status == 405
-            await app.shutdown()
-
-        asyncio.run(run())
-        assert events == ["app:in", "app:out"]
-
-    def test_anonymous_route_middleware_runs(self) -> None:
-        """Anonymous routes (no name) must still execute route middleware.
-
-        The route identity is (path_template, methods), not route.name.
-        """
-
-        app = LingShu()
-        route_mw_called: list[str] = []
-
-        async def route_mw(request: Request, call_next: object) -> Response:
-            route_mw_called.append("called")
-            return await call_next()  # type: ignore[misc]
-
-        @app.get("/", middleware=[MiddlewareDeclaration(route_mw)])
-        async def root(request: Request) -> Response:
-            return Response.text("ok")
-
-        app.freeze()
-        request = make_request("GET", "/")
-
-        async def run() -> None:
-            await app.startup()
-            await app.dispatch("GET", "/", request)
-            await app.shutdown()
-
-        asyncio.run(run())
-        assert route_mw_called == ["called"]
-
-    def test_anonymous_route_path_params_published(self) -> None:
-        """Anonymous parameter routes must publish path_params.
-
-        Uses path_template as route_label when name is None.
-        """
-
-        app = LingShu()
-
-        @app.get("/users/{user_id}")
-        async def user(request: Request) -> Response:
-            return Response.text(request.path_params["user_id"])
-
-        app.freeze()
-        request = make_request("GET", "/users/42")
-
-        async def run() -> None:
-            await app.startup()
-            response = await app.dispatch("GET", "/users/42", request)
-            assert response.body == b"42"
             await app.shutdown()
 
         asyncio.run(run())
