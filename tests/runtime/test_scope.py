@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from lingshu.core.errors import DeadlineError, LifecycleError
 from lingshu.runtime import (
     CancellationReason,
@@ -78,9 +77,7 @@ def test_parent_cancellation_propagates_reason_and_preserves_control_flow() -> N
         except Exception:
             caught_by_exception = True
         except ScopeCancelled as exc:
-            assert (
-                exc.cancellation.origin_reason is CancellationReason.CLIENT_DISCONNECT
-            )
+            assert exc.cancellation.origin_reason is CancellationReason.CLIENT_DISCONNECT
         assert not caught_by_exception
         await app.close()
 

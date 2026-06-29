@@ -204,10 +204,8 @@ class BoundedAdmission:
             break
 
     def _remove_waiter(self, waiter: _Waiter) -> None:
-        try:
+        if waiter in self._waiters:
             self._waiters.remove(waiter)
-        except ValueError:
-            pass
 
     def _waiter_was_granted(self, waiter: _Waiter) -> bool:
         return (

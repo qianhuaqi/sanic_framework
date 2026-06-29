@@ -107,7 +107,7 @@ jobs:
           "$CLEAN_ENV/bin/python" -m pip install --upgrade pip
           "$CLEAN_ENV/bin/python" -m pip install dist/*.whl
           cd "$RUNNER_TEMP"
-          env -u PYTHONPATH "$CLEAN_ENV/bin/python" -c "import lingshu; assert lingshu.__all__ == ()"
+          env -u PYTHONPATH "$CLEAN_ENV/bin/python" -c "import lingshu; assert lingshu.__all__ == ('HTTPException', 'LingShu', 'Request', 'Response')"
           env -u PYTHONPATH "$CLEAN_ENV/bin/python" -m lingshu --version
           env -u PYTHONPATH "$CLEAN_ENV/bin/lingshu" version
           "$CLEAN_ENV/bin/python" -m pip uninstall -y lingshu

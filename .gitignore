@@ -9,7 +9,7 @@ venv/
 env/
 build/
 dist/
-runtime/
+/runtime/
 .env
 .env.*
 !.env.example

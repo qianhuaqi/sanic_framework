@@ -19,9 +19,7 @@ from lingshu.runtime.cancellation import (
 from lingshu.runtime.deadline import Deadline, deadline_exceeded_error
 
 _T = TypeVar("_T")
-_CURRENT_SCOPE: ContextVar[Scope | None] = ContextVar(
-    "lingshu_current_scope", default=None
-)
+_CURRENT_SCOPE: ContextVar[Scope | None] = ContextVar("lingshu_current_scope", default=None)
 
 
 class ScopeKind(StrEnum):
@@ -111,9 +109,7 @@ class Scope:
 
         self.kind = kind
         self.parent = parent
-        self.clock = clock or (
-            parent.clock if parent is not None else SystemMonotonicClock()
-        )
+        self.clock = clock or (parent.clock if parent is not None else SystemMonotonicClock())
         self.deadline = _effective_deadline(parent, deadline)
         if kind in {ScopeKind.REQUEST, ScopeKind.OPERATION} and self.deadline is None:
             raise ValueError(f"{kind.value} Scope requires a finite Deadline")
@@ -187,9 +183,7 @@ class Scope:
             deadline=requested,
             clock=self.clock,
             cleanup_budget_ns=(
-                self.cleanup_budget_ns
-                if cleanup_budget_ns is None
-                else cleanup_budget_ns
+                self.cleanup_budget_ns if cleanup_budget_ns is None else cleanup_budget_ns
             ),
         )
 
@@ -205,9 +199,7 @@ class Scope:
             raise ValueError("cleanup name must not be empty")
         self._cleanups.append(_CleanupRegistration(name, callback))
 
-    def spawn(
-        self, coroutine: Coroutine[Any, Any, _T], *, name: str
-    ) -> asyncio.Task[_T]:
+    def spawn(self, coroutine: Coroutine[Any, Any, _T], *, name: str) -> asyncio.Task[_T]:
         """Create a managed child task carrying this Scope's context."""
 
         self._ensure_open()
@@ -285,9 +277,7 @@ class Scope:
                     for child in tuple(self._children):
                         await child.close()
                     if self._tasks:
-                        await asyncio.gather(
-                            *tuple(self._tasks), return_exceptions=True
-                        )
+                        await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
                     for registration in reversed(self._cleanups):
                         await self._run_cleanup(registration)
             except TimeoutError:
@@ -373,9 +363,7 @@ def current_scope() -> Scope | None:
     return _CURRENT_SCOPE.get()
 
 
-def _effective_deadline(
-    parent: Scope | None, requested: Deadline | None
-) -> Deadline | None:
+def _effective_deadline(parent: Scope | None, requested: Deadline | None) -> Deadline | None:
     if parent is None:
         return requested
     if parent.deadline is None:

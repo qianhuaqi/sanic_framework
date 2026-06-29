@@ -1,6 +1,7 @@
 """HTTP Request, Response, routing, Middleware, and bounded-body contracts."""
 
 from lingshu.http.body import RequestBody
+from lingshu.http.exceptions import HTTPException
 from lingshu.http.message import Headers, HTTPMethod, HTTPVersion, RequestTarget
 from lingshu.http.middleware import (
     MiddlewareCallable,
@@ -30,6 +31,7 @@ from lingshu.http.router import (
 
 __all__ = (
     "ConnectionInfo",
+    "HTTPException",
     "HTTPMethod",
     "HTTPVersion",
     "Handler",
