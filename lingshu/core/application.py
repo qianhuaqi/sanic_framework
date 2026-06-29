@@ -1,27 +1,29 @@
-"""Application Kernel, LingShu facade, lifecycle, and atomic freeze."""
+"""Application Kernel, LingShu facade, lifecycle, dispatch, and atomic freeze."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+import inspect
+from collections.abc import Awaitable, Callable, Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
-from types import MappingProxyType
+from typing import cast
 
 from lingshu.core.config import ConfigSnapshot
-from lingshu.core.errors import FatalScope, LifecycleError, LingShuError
+from lingshu.core.errors import FatalScope, LifecycleError
 from lingshu.core.identifiers import RevisionId
 from lingshu.core.plan import (
     ApplicationPlan,
     ApplicationRevision,
-    ExceptionMapper,
     ExceptionMapperRegistration,
     ExtensionContribution,
+    LifecycleHookRegistration,
 )
 from lingshu.http.message import HTTPMethod
-from lingshu.http.middleware import MiddlewareDeclaration
+from lingshu.http.middleware import MiddlewareDeclaration, Terminal
 from lingshu.http.request import Request
 from lingshu.http.response import Response, normalize_response
-from lingshu.http.router import Handler, RouteDeclaration
+from lingshu.http.router import Handler, RouteDeclaration, RouteMatchKind
 
 
 class ApplicationState(StrEnum):
@@ -42,13 +44,15 @@ type RouteMethodDecorator = Callable[[Handler], Handler]
 
 
 @dataclass(frozen=True, slots=True)
-class _MiddlewareRegistration:
-    declaration: MiddlewareDeclaration
+class _RouteRegistration:
+    declaration: RouteDeclaration
+    sequence: int
 
 
 @dataclass(frozen=True, slots=True)
-class _RouteRegistration:
-    declaration: RouteDeclaration
+class _MiddlewareRegistration:
+    declaration: MiddlewareDeclaration
+    sequence: int
 
 
 @dataclass(slots=True)
@@ -59,10 +63,52 @@ class _RegistrationCatalog:
     application_middleware: list[_MiddlewareRegistration] = field(default_factory=list)
     exception_mappers: list[ExceptionMapperRegistration] = field(default_factory=list)
     extensions: list[ExtensionContribution] = field(default_factory=list)
-    startup_hooks: list[tuple[str, LifecycleHook]] = field(default_factory=list)
-    shutdown_hooks: list[tuple[str, LifecycleHook]] = field(default_factory=list)
+    startup_hooks: list[LifecycleHookRegistration] = field(default_factory=list)
+    shutdown_hooks: list[LifecycleHookRegistration] = field(default_factory=list)
     config_snapshot: ConfigSnapshot | None = None
+    _sequence: int = 0
     dirty: bool = True
+
+    def _next_sequence(self) -> int:
+        seq = self._sequence
+        self._sequence += 1
+        return seq
+
+    def add_route(self, declaration: RouteDeclaration) -> None:
+        self.routes.append(_RouteRegistration(declaration, self._next_sequence()))
+        self.dirty = True
+
+    def add_middleware(self, declaration: MiddlewareDeclaration) -> None:
+        self.application_middleware.append(
+            _MiddlewareRegistration(declaration, self._next_sequence())
+        )
+        self.dirty = True
+
+    def add_mapper(self, registration: ExceptionMapperRegistration) -> None:
+        seq = self._next_sequence()
+        # Re-create with sequence assigned.
+        fixed = ExceptionMapperRegistration(
+            exception_type=registration.exception_type,
+            mapper=registration.mapper,
+            route_name=registration.route_name,
+            registration_sequence=seq,
+        )
+        self.exception_mappers.append(fixed)
+        self.dirty = True
+
+    def add_extension(self, contribution: ExtensionContribution) -> None:
+        self.extensions.append(contribution)
+        self.dirty = True
+
+    def add_startup_hook(self, name: str, hook: LifecycleHook) -> None:
+        seq = self._next_sequence()
+        self.startup_hooks.append(LifecycleHookRegistration(name, hook, seq))
+        self.dirty = True
+
+    def add_shutdown_hook(self, name: str, hook: LifecycleHook) -> None:
+        seq = self._next_sequence()
+        self.shutdown_hooks.append(LifecycleHookRegistration(name, hook, seq))
+        self.dirty = True
 
     def revision(self) -> ApplicationRevision:
         """Build an immutable snapshot of current registrations for freeze."""
@@ -74,10 +120,8 @@ class _RegistrationCatalog:
             ),
             exception_mappers=tuple(self.exception_mappers),
             extensions=tuple(self.extensions),
-            lifecycle_hooks={
-                "startup": tuple(hook for _, hook in self.startup_hooks),
-                "shutdown": tuple(hook for _, hook in self.shutdown_hooks),
-            },
+            startup_hooks=tuple(self.startup_hooks),
+            shutdown_hooks=tuple(self.shutdown_hooks),
             config_revision_id=(
                 self.config_snapshot.revision_id
                 if self.config_snapshot is not None
@@ -86,69 +130,16 @@ class _RegistrationCatalog:
         )
 
 
-class HTTPException(LingShuError):
-    """Intentional application-level HTTP exception.
-
-    Raised inside a handler to produce a client-visible error response with an explicit
-    HTTP status code. Unlike generic framework errors, this exception is always mapped to a
-    Problem Details response rather than a 500 fallback.
-    """
-
-    def __init__(
-        self,
-        status_code: int,
-        detail: str = "",
-        *,
-        code: str | None = None,
-        headers: Mapping[str, str] | None = None,
-    ) -> None:
-        if not 400 <= status_code <= 599:
-            raise ValueError("HTTPException status_code must be between 400 and 599")
-        resolved_code = code or f"http.status_{status_code}"
-        resolved_detail = detail or _DEFAULT_DETAIL.get(status_code, "HTTP error")
-        super().__init__(
-            resolved_code,
-            resolved_detail,
-            title=resolved_detail,
-            client_visible=True,
-            http_status=status_code,
-            fatal_scope=FatalScope.REQUEST,
-        )
-        self.status_code = status_code
-        self.headers = MappingProxyType(dict(headers)) if headers else None
-
-
-_DEFAULT_DETAIL: Mapping[int, str] = MappingProxyType(
-    {
-        400: "Bad Request",
-        401: "Unauthorized",
-        403: "Forbidden",
-        404: "Not Found",
-        405: "Method Not Allowed",
-        409: "Conflict",
-        422: "Unprocessable Entity",
-        429: "Too Many Requests",
-        500: "Internal Server Error",
-        502: "Bad Gateway",
-        503: "Service Unavailable",
-        504: "Gateway Timeout",
-    }
-)
-
-
-def _frozen_mapping(value: Mapping[str, str] | None) -> Mapping[str, str]:
-    return MappingProxyType(dict(value)) if value else MappingProxyType({})
-
-
 class Application:
     """Internal Application Kernel owning lifecycle state and immutable plans.
 
-    The public :class:`LingShu` facade wraps this Kernel. The Kernel does not own TCP
-    listeners, protocol parsing, or business policy and must not import ``lingshu.server``.
+    The Kernel does not own TCP listeners, protocol parsing, or business policy and must
+    not import ``lingshu.server``.
     """
 
     __slots__ = (
         "_catalog",
+        "_extensions_started",
         "_plan",
         "_state",
     )
@@ -157,6 +148,7 @@ class Application:
         self._catalog = _RegistrationCatalog()
         self._plan: ApplicationPlan | None = None
         self._state = ApplicationState.CREATED
+        self._extensions_started: list[str] = []
 
     @property
     def state(self) -> ApplicationState:
@@ -174,37 +166,31 @@ class Application:
 
     def add_route(self, declaration: RouteDeclaration) -> None:
         self._ensure_registration_allowed()
-        self._catalog.routes.append(_RouteRegistration(declaration))
-        self._catalog.dirty = True
+        self._catalog.add_route(declaration)
 
     def add_application_middleware(self, declaration: MiddlewareDeclaration) -> None:
         self._ensure_registration_allowed()
-        self._catalog.application_middleware.append(_MiddlewareRegistration(declaration))
-        self._catalog.dirty = True
+        self._catalog.add_middleware(declaration)
 
     def add_exception_mapper(self, registration: ExceptionMapperRegistration) -> None:
         self._ensure_registration_allowed()
-        self._catalog.exception_mappers.append(registration)
-        self._catalog.dirty = True
+        self._catalog.add_mapper(registration)
 
     def add_extension(self, contribution: ExtensionContribution) -> None:
         self._ensure_registration_allowed()
-        self._catalog.extensions.append(contribution)
-        self._catalog.dirty = True
+        self._catalog.add_extension(contribution)
 
     def add_startup_hook(self, name: str, hook: LifecycleHook) -> None:
         self._ensure_registration_allowed()
         if not name:
             raise ValueError("startup hook name must not be empty")
-        self._catalog.startup_hooks.append((name, hook))
-        self._catalog.dirty = True
+        self._catalog.add_startup_hook(name, hook)
 
     def add_shutdown_hook(self, name: str, hook: LifecycleHook) -> None:
         self._ensure_registration_allowed()
         if not name:
             raise ValueError("shutdown hook name must not be empty")
-        self._catalog.shutdown_hooks.append((name, hook))
-        self._catalog.dirty = True
+        self._catalog.add_shutdown_hook(name, hook)
 
     def configure(self, snapshot: ConfigSnapshot) -> None:
         self._ensure_registration_allowed()
@@ -214,17 +200,19 @@ class Application:
     def freeze(self) -> ApplicationPlan:
         """Validate and atomically compile an immutable Application Plan.
 
-        Freeze is idempotent for an unchanged revision: if no registrations changed since
-        the last successful freeze, the existing Plan is returned unchanged. A failed
-        freeze publishes no partial plan.
+        Freeze is idempotent for an unchanged revision. A failed freeze publishes no
+        partial plan and the previous Plan, if any, remains intact.
         """
 
         if self._state is ApplicationState.FROZEN and not self._catalog.dirty:
             assert self._plan is not None
             return self._plan
 
-        if self._state not in (ApplicationState.CREATED, ApplicationState.CONFIGURING,
-                               ApplicationState.FROZEN):
+        if self._state not in (
+            ApplicationState.CREATED,
+            ApplicationState.CONFIGURING,
+            ApplicationState.FROZEN,
+        ):
             raise _lifecycle_error(
                 "lifecycle.invalid_state",
                 "Freeze requires CREATED, CONFIGURING, or FROZEN state.",
@@ -235,7 +223,7 @@ class Application:
 
         revision = self._catalog.revision()
 
-        # Compile fully before publishing. If compilation raises, _plan stays unchanged.
+        # ApplicationPlan.__init__ does ALL validation. If it raises, _plan stays unchanged.
         new_plan = ApplicationPlan(revision)
 
         self._plan = new_plan
@@ -244,7 +232,7 @@ class Application:
         return new_plan
 
     async def startup(self) -> None:
-        """Transition from FROZEN to RUNNING, executing startup hooks in order."""
+        """Transition from FROZEN to RUNNING, executing all startup hooks and extensions."""
 
         if self._state is ApplicationState.RUNNING:
             return
@@ -254,9 +242,35 @@ class Application:
                 "Startup requires a frozen application.",
             )
         assert self._plan is not None
+
         self._state = ApplicationState.STARTING
-        # P1 lifecycle hooks are a placeholder protocol; the contract is defined but the
-        # execution surface is intentionally minimal until a later issue promotes it.
+        started_extensions: list[str] = []
+
+        try:
+            # Execute application startup hooks.
+            for hook_reg in self._plan.startup_hooks:
+                await hook_reg.hook()
+
+            # Execute extension startup in dependency order.
+            ext_plan = self._plan.extension_plan
+            for name in ext_plan.startup_order:
+                ext = ext_plan.extensions_by_name.get(name)
+                if ext is not None and ext.startup_hook is not None:
+                    await ext.startup_hook()
+                started_extensions.append(name)
+
+        except BaseException:
+            # Rollback: shutdown already-started extensions in reverse order.
+            for name in reversed(started_extensions):
+                ext = ext_plan.extensions_by_name.get(name)
+                if ext is not None and ext.shutdown_hook is not None:
+                    with suppress(Exception):
+                        await ext.shutdown_hook()
+            self._state = ApplicationState.FROZEN
+            self._extensions_started = []
+            raise
+
+        self._extensions_started = started_extensions
         self._state = ApplicationState.RUNNING
 
     async def drain(self) -> None:
@@ -272,7 +286,7 @@ class Application:
         self._state = ApplicationState.DRAINING
 
     async def shutdown(self) -> None:
-        """Idempotently transition to STOPPED, executing shutdown hooks in reverse."""
+        """Idempotently transition to STOPPED, executing shutdown in reverse order."""
 
         if self._state is ApplicationState.STOPPED:
             return
@@ -287,7 +301,191 @@ class Application:
                 "Shutdown requires a running, draining, or starting application.",
             )
         self._state = ApplicationState.STOPPING
+
+        assert self._plan is not None
+
+        # Shutdown extensions in reverse startup order.
+        for name in reversed(self._extensions_started):
+            ext = self._plan.extension_plan.extensions_by_name.get(name)
+            if ext is not None and ext.shutdown_hook is not None:
+                with suppress(Exception):
+                    await ext.shutdown_hook()
+
+        # Execute application shutdown hooks in reverse order.
+        for hook_reg in reversed(self._plan.shutdown_hooks):
+            with suppress(Exception):
+                await hook_reg.hook()
+
+        self._extensions_started = []
         self._state = ApplicationState.STOPPED
+
+    async def dispatch(self, method: str, path: str, request: Request) -> Response:
+        """Execute the canonical request pipeline for one request.
+
+        This is the internal dispatch used by the protocol layer (P1-08). It does NOT
+        own Transport, commit/write, or Runtime Record.
+
+        Pipeline:
+        1. application middleware ingress
+        2. route match
+        3. 404 / 405 / MATCH branching
+        4. MATCH: publish immutable route identity and path params
+        5. route middleware ingress
+        6. invoke async handler
+        7. normalize handler return exactly once
+        8. route middleware egress
+        9. application middleware egress
+        10. exception mapping and safe fallback
+
+        BaseException control flow (CancelledError, KeyboardInterrupt, SystemExit, etc.)
+        is always re-raised unchanged.
+        """
+
+        if self._state is not ApplicationState.RUNNING:
+            raise _lifecycle_error(
+                "lifecycle.invalid_state",
+                "Dispatch requires a running application.",
+            )
+        assert self._plan is not None
+        plan = self._plan
+
+        try:
+            return await self._run_pipeline(method, path, request, plan)
+        except BaseException as exc:
+            # Never convert BaseException control flow into a Response.
+            if not isinstance(exc, Exception):
+                raise
+            return await self._resolve_exception(exc, plan, request)
+
+    async def _run_pipeline(
+        self,
+        method: str,
+        path: str,
+        request: Request,
+        plan: ApplicationPlan,
+    ) -> Response:
+        """Execute the full middleware→route→handler pipeline."""
+
+        match = plan.router.match(method, path)
+
+        if match.kind is RouteMatchKind.NOT_FOUND:
+            return Response.text("Not Found", status=404)
+        if match.kind is RouteMatchKind.METHOD_NOT_ALLOWED:
+            allowed = ",".join(
+                m.value for m in sorted(match.allowed_methods, key=lambda m: m.value)
+            )
+            return Response.text(
+                "Method Not Allowed",
+                status=405,
+                headers=[("allow", allowed)],
+            )
+
+        # MATCH: publish route identity and path params.
+        assert match.route is not None
+        route = match.route
+        if route.name is not None:
+            request.publish_route(route.name, match.path_params)
+
+        # Build the terminal: route middleware → handler → normalize.
+        async def terminal(req: Request) -> Response:
+            raw = await route.handler(req)
+            return normalize_response(raw)
+
+        # Select route middleware plan if available.
+        route_plan = plan.route_middleware.get(route.name) if route.name else None
+
+        if route_plan is not None and route_plan.declarations:
+            # Execute: application middleware → route middleware → terminal
+            async def combined(req: Request) -> Response:
+                return await route_plan.run(req, cast(Terminal, terminal))
+
+            return await plan.application_middleware.run(
+                request, cast(Terminal, combined)
+            )
+
+        # No route middleware: application middleware → terminal directly.
+        return await plan.application_middleware.run(
+            request, cast(Terminal, terminal)
+        )
+
+    async def _resolve_exception(
+        self,
+        error: Exception,
+        plan: ApplicationPlan,
+        request: Request,
+    ) -> Response:
+        """Resolve an exception to a Response via mapper chain or safe fallback."""
+
+        route_name = request.route_name
+
+        # 1. Route-scoped mappers (most-specific exception type via MRO).
+        response = await self._try_mappers(
+            plan.exception_mappers, error, route_name, route_only=True
+        )
+        if response is not None:
+            return response
+
+        # 2. Application-scoped mappers (most-specific exception type via MRO).
+        response = await self._try_mappers(
+            plan.exception_mappers, error, route_name, route_only=False
+        )
+        if response is not None:
+            return response
+
+        # 3. Built-in HTTPException mapping.
+        from lingshu.http.exceptions import HTTPException
+
+        if isinstance(error, HTTPException):
+            resp = Response.text(error.safe_message, status=error.status_code)
+            if error.headers:
+                for name, value in error.headers.items():
+                    resp.set_header(name, value)
+            return resp
+
+        # 4. Safe 500 internal error response.
+        return Response.text("Internal Server Error", status=500)
+
+    async def _try_mappers(
+        self,
+        mappers: tuple[ExceptionMapperRegistration, ...],
+        error: Exception,
+        route_name: str | None,
+        *,
+        route_only: bool,
+    ) -> Response | None:
+        """Find the most-specific mapper for the exception type using MRO distance.
+
+        MRO distance 0 is the most specific (exact type match); larger distances are
+        less specific ancestors. The mapper with the smallest distance wins. Ties are
+        broken by earliest registration sequence for determinism.
+        """
+
+        best: ExceptionMapperRegistration | None = None
+        best_distance: int | None = None
+
+        for mapper in mappers:
+            if route_only:
+                if mapper.route_name is None or mapper.route_name != route_name:
+                    continue
+            else:
+                if mapper.route_name is not None:
+                    continue
+
+            distance = _mro_distance(error.__class__, mapper.exception_type)
+            if distance < 0:
+                continue
+
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best = mapper
+            elif distance == best_distance and best is not None:
+                if mapper.registration_sequence < best.registration_sequence:
+                    best = mapper
+
+        if best is None:
+            return None
+
+        return await _invoke_mapper(best.mapper, error)
 
     def _ensure_registration_allowed(self) -> None:
         if self._state not in (ApplicationState.CREATED, ApplicationState.CONFIGURING):
@@ -297,6 +495,41 @@ class Application:
             )
         if self._state is ApplicationState.CREATED:
             self._state = ApplicationState.CONFIGURING
+
+
+def _mro_distance(actual: type[Exception], registered: type[Exception]) -> int:
+    """Return the MRO distance from ``actual`` to ``registered``.
+
+    Returns 0 for exact match, 1 for direct parent, etc. Returns -1 if ``registered``
+    is not in the MRO of ``actual``.
+    """
+
+    for index, cls in enumerate(actual.__mro__):
+        if cls is registered:
+            return index
+    return -1
+
+
+async def _invoke_mapper(
+    mapper: Callable[..., object],
+    error: Exception,
+) -> Response:
+    """Invoke a mapper and validate it returns a Response."""
+
+    try:
+        result = mapper(error)
+        if inspect.isawaitable(result):
+            result = await result
+    except Exception:
+        return _safe_500()
+
+    if not isinstance(result, Response):
+        return _safe_500()
+    return result
+
+
+def _safe_500() -> Response:
+    return Response.text("Internal Server Error", status=500)
 
 
 def _lifecycle_error(code: str, message: str) -> LifecycleError:
@@ -309,10 +542,6 @@ def _lifecycle_error(code: str, message: str) -> LifecycleError:
 
 class LingShu:
     """Public LingShu application composition facade.
-
-    Provides route decorators, middleware registration, exception-mapper registration,
-    extension registration, and lifecycle control. The internal Application Kernel owns
-    lifecycle state, revisions, and the immutable compiled Plan.
 
     Construction has no runtime side effects: importing or instantiating LingShu does not
     start tasks, open files, bind sockets, connect to services, or import user applications.
@@ -349,6 +578,11 @@ class LingShu:
     async def shutdown(self) -> None:
         await self._kernel.shutdown()
 
+    async def dispatch(self, method: str, path: str, request: Request) -> Response:
+        """Execute the canonical request pipeline for one request."""
+
+        return await self._kernel.dispatch(method, path, request)
+
     def route(
         self,
         path: str,
@@ -372,26 +606,68 @@ class LingShu:
 
         return decorator
 
-    def get(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("GET",), name=name)
+    def get(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("GET",), name=name, middleware=middleware)
 
-    def post(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("POST",), name=name)
+    def post(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("POST",), name=name, middleware=middleware)
 
-    def put(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("PUT",), name=name)
+    def put(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("PUT",), name=name, middleware=middleware)
 
-    def patch(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("PATCH",), name=name)
+    def patch(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("PATCH",), name=name, middleware=middleware)
 
-    def delete(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("DELETE",), name=name)
+    def delete(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("DELETE",), name=name, middleware=middleware)
 
-    def head(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("HEAD",), name=name)
+    def head(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("HEAD",), name=name, middleware=middleware)
 
-    def options(self, path: str, *, name: str | None = None) -> RouteMethodDecorator:
-        return self.route(path, ("OPTIONS",), name=name)
+    def options(
+        self,
+        path: str,
+        *,
+        name: str | None = None,
+        middleware: Iterable[MiddlewareDeclaration] = (),
+    ) -> RouteMethodDecorator:
+        return self.route(path, ("OPTIONS",), name=name, middleware=middleware)
 
     def add_middleware(
         self,
@@ -404,11 +680,16 @@ class LingShu:
 
     def exception_mapper(
         self,
-        mapper: ExceptionMapper,
+        exception_type: type[Exception],
+        mapper: Callable[..., object],
         *,
         route_name: str | None = None,
     ) -> None:
-        registration = ExceptionMapperRegistration(mapper, route_name=route_name)
+        registration = ExceptionMapperRegistration(
+            exception_type=exception_type,
+            mapper=mapper,  # type: ignore[arg-type]
+            route_name=route_name,
+        )
         self._kernel.add_exception_mapper(registration)
 
     def add_extension(
@@ -416,8 +697,15 @@ class LingShu:
         name: str,
         *,
         dependencies: Iterable[str] = (),
+        startup_hook: LifecycleHook | None = None,
+        shutdown_hook: LifecycleHook | None = None,
     ) -> None:
-        contribution = ExtensionContribution(name, dependencies=tuple(dependencies))
+        contribution = ExtensionContribution(
+            name,
+            dependencies=tuple(dependencies),
+            startup_hook=startup_hook,
+            shutdown_hook=shutdown_hook,
+        )
         self._kernel.add_extension(contribution)
 
     def on_startup(self, name: str) -> Callable[[LifecycleHook], LifecycleHook]:
@@ -437,23 +725,10 @@ class LingShu:
     def use_config(self, snapshot: ConfigSnapshot) -> None:
         self._kernel.configure(snapshot)
 
-    def normalize_handler_return(self, value: object) -> Response:
-        """Normalize a supported handler return value exactly once."""
-
-        return normalize_response(value)
-
-
-def normalize_handler_return(value: object) -> Response:
-    """Public alias for exactly-once handler return normalization."""
-
-    return normalize_response(value)
-
 
 __all__ = (
     "Application",
     "ApplicationState",
-    "HTTPException",
     "LifecycleHook",
     "LingShu",
-    "normalize_handler_return",
 )

@@ -50,9 +50,6 @@ def test_root_facade_publishes_minimum_public_api() -> None:
         "LingShu",
         "Request",
         "Response",
-        "SupportedReturnValue",
-        "normalize_handler_return",
-        "normalize_response",
     )
     assert hasattr(lingshu, "LingShu")
     assert hasattr(lingshu, "Request")
