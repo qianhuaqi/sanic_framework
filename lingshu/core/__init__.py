@@ -1,5 +1,13 @@
 """Stable Core provider contracts for LingShu."""
 
+from lingshu.core.application import (
+    Application,
+    ApplicationState,
+    HTTPException,
+    LifecycleHook,
+    LingShu,
+    normalize_handler_return,
+)
 from lingshu.core.config import (
     ConfigField,
     ConfigSchema,
@@ -59,6 +67,14 @@ from lingshu.core.identifiers import (
     WorkerId,
     validate_external_request_id,
 )
+from lingshu.core.plan import (
+    ApplicationPlan,
+    ApplicationRevision,
+    ExceptionMapper,
+    ExceptionMapperRegistration,
+    ExtensionContribution,
+    ExtensionStartupPlan,
+)
 from lingshu.core.problem import (
     PROBLEM_MEDIA_TYPE,
     ProblemDetails,
@@ -76,6 +92,10 @@ from lingshu.core.time import (
 __all__ = (
     "PROBLEM_MEDIA_TYPE",
     "AdmissionError",
+    "Application",
+    "ApplicationPlan",
+    "ApplicationRevision",
+    "ApplicationState",
     "ConfigField",
     "ConfigSchema",
     "ConfigSnapshot",
@@ -86,11 +106,18 @@ __all__ = (
     "ConnectionId",
     "DeadlineError",
     "EntropySource",
+    "ExceptionMapper",
+    "ExceptionMapperRegistration",
+    "ExtensionContribution",
     "ExtensionError",
+    "ExtensionStartupPlan",
     "FatalScope",
+    "HTTPException",
     "HandlerContractError",
     "InternalError",
     "LifecycleError",
+    "LifecycleHook",
+    "LingShu",
     "LingShuError",
     "MonotonicClock",
     "OperationId",
@@ -132,6 +159,7 @@ __all__ = (
     "freeze_safe_details",
     "freeze_safe_value",
     "normalize_config_key",
+    "normalize_handler_return",
     "parse_rfc3339_utc",
     "problem_from_exception",
     "validate_error_code",
