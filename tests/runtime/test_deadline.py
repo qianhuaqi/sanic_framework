@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from lingshu.core.errors import DeadlineError
 from lingshu.runtime import Deadline
 
